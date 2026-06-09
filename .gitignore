@@ -1,0 +1,7 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.vscode/
+*.bin
+*.elf
+Thumbs.db

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Akıllı Tarım Sistemi — Arayüz Taslağı</title>
+  <style>
+    /* ── Genel ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    /* ── Başlık ────────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    header h1 {
+      font-size: 1.9em;
+      color: #4ecca3;
+      letter-spacing: 1px;
+    }
+    header p.sub {
+      color: #888;
+      font-size: .85em;
+      margin-top: 4px;
+    }
+    .badge {
+      display: inline-block;
+      background: #4ecca322;
+      color: #4ecca3;
+      border: 1px solid #4ecca344;
+      border-radius: 20px;
+      padding: 2px 12px;
+      font-size: .75em;
+      margin-top: 6px;
+    }
+
+    /* ── Durum Şeridi ──────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin: 16px auto 24px;
+      max-width: 820px;
+    }
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .82em;
+      color: #aaa;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #4ecca3;
+      box-shadow: 0 0 6px #4ecca3;
+      animation: pulse 2s infinite;
+    }
+    .dot.red   { background: #ff6b6b; box-shadow: 0 0 6px #ff6b6b; }
+    .dot.yellow{ background: #ffd32a; box-shadow: 0 0 6px #ffd32a; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .4; }
+    }
+
+    /* ── Kart Izgarası ─────────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      max-width: 820px;
+      margin: 0 auto 28px;
+    }
+
+    .card {
+      background: #16213e;
+      border-radius: 14px;
+      padding: 22px 18px;
+      text-align: center;
+      box-shadow: 0 4px 18px rgba(0,0,0,.35);
+      border: 1px solid #ffffff08;
+      transition: transform .18s;
+    }
+    .card:hover { transform: translateY(-3px); }
+
+    .card .icon  { font-size: 1.6em; margin-bottom: 6px; }
+    .card .label { font-size: .78em; color: #888; text-transform: uppercase; letter-spacing: .8px; }
+    .card .value {
+      font-size: 2.1em;
+      font-weight: 700;
+      color: #4ecca3;
+      margin: 8px 0 4px;
+      line-height: 1;
+    }
+    .card .hint  { font-size: .75em; color: #666; }
+
+    .card.warn   { border-color: #ff6b6b44; }
+    .card.warn .value { color: #ff6b6b; }
+    .card.ok     { border-color: #4ecca344; }
+
+    /* Pompa AÇIK kart animasyonu */
+    .card.pump-on { border-color: #ffd32a44; }
+    .card.pump-on .value { color: #ffd32a; }
+
+    /* ── Kontrol Paneli ────────────────────────────────── */
+    .controls {
+      max-width: 820px;
+      margin: 0 auto 28px;
+      background: #16213e;
+      border-radius: 14px;
+      padding: 20px 24px;
+      border: 1px solid #ffffff08;
+    }
+    .controls h2 {
+      font-size: .9em;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 14px;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 8px;
+      font-size: .95em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .12s;
+    }
+    .btn:hover  { opacity: .88; transform: scale(1.03); }
+    .btn:active { transform: scale(.97); }
+    .btn-green  { background: #4ecca3; color: #000; }
+    .btn-red    { background: #ff6b6b; color: #fff; }
+    .btn-purple { background: #a29bfe; color: #fff; }
+    .btn-gray   { background: #2d3561; color: #aaa; }
+
+    /* ── Grafik Placeholder ────────────────────────────── */
+    .chart-box {
+      max-width: 820px;
+      margin: 0 auto 28px;
+      background: #16213e;
+      border-radius: 14px;
+      padding: 20px 24px;
+      border: 1px solid #ffffff08;
+    }
+    .chart-box h2 {
+      font-size: .9em;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 14px;
+    }
+    .chart-placeholder {
+      height: 140px;
+      background: #0f172a;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #334;
+      font-size: .85em;
+      border: 1px dashed #334;
+    }
+    /* Basit SVG grafik örneği */
+    .sparkline { width: 100%; height: 140px; }
+
+    /* ── Ayarlar ───────────────────────────────────────── */
+    .settings {
+      max-width: 820px;
+      margin: 0 auto 28px;
+      background: #16213e;
+      border-radius: 14px;
+      padding: 20px 24px;
+      border: 1px solid #ffffff08;
+    }
+    .settings h2 {
+      font-size: .9em;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 16px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #ffffff08;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: .9em; color: #ccc; }
+    .setting-label small { display: block; color: #666; font-size: .8em; }
+    .setting-row input[type=range] {
+      accent-color: #4ecca3;
+      width: 140px;
+    }
+    .setting-val {
+      color: #4ecca3;
+      font-weight: 600;
+      min-width: 50px;
+      text-align: right;
+      font-size: .9em;
+    }
+
+    /* ── API Bilgisi ───────────────────────────────────── */
+    .api-box {
+      max-width: 820px;
+      margin: 0 auto 28px;
+      background: #0f172a;
+      border-radius: 14px;
+      padding: 20px 24px;
+      border: 1px solid #4ecca322;
+    }
+    .api-box h2 {
+      font-size: .9em;
+      color: #4ecca3;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 12px;
+    }
+    .api-box code {
+      display: block;
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: 'Courier New', monospace;
+      font-size: .82em;
+      color: #a29bfe;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .api-box .desc { font-size: .78em; color: #666; margin-bottom: 4px; }
+
+    /* ── Footer ────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      color: #444;
+      font-size: .75em;
+      margin-top: 8px;
+    }
+    .note-box {
+      max-width: 820px;
+      margin: 0 auto 24px;
+      background: #1e2a1e;
+      border-left: 3px solid #4ecca3;
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      font-size: .82em;
+      color: #aaa;
+    }
+    .note-box strong { color: #4ecca3; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Başlık ── -->
+  <header>
+    <h1>🌱 Akıllı Tarım Sistemi</h1>
+    <p class="sub">ESP32 Tabanlı Otomasyon Paneli</p>
+    <span class="badge">● Canlı Veri — Demo Görünümü</span>
+  </header>
+
+  <!-- ── Durum Şeridi ── -->
+  <div class="status-bar">
+    <div class="status-item"><span class="dot"></span> WiFi Bağlı (192.168.1.10)</div>
+    <div class="status-item"><span class="dot"></span> DHT22 Aktif</div>
+    <div class="status-item"><span class="dot yellow"></span> Pompa Otomatik</div>
+    <div class="status-item"><span class="dot red"></span> Son güncelleme: 2 sn önce</div>
+  </div>
+
+  <!-- ── Sensör Kartları ── -->
+  <div class="grid">
+
+    <div class="card warn">
+      <div class="icon">💧</div>
+      <div class="label">Nem</div>
+      <div class="value">28.4%</div>
+      <div class="hint">Eşik: %30 — Pompa aktif</div>
+    </div>
+
+    <div class="card ok">
+      <div class="icon">🌡️</div>
+      <div class="label">Sıcaklık</div>
+      <div class="value">31.2°C</div>
+      <div class="hint">Eşik: 30°C — LED yanıyor</div>
+    </div>
+
+    <div class="card ok">
+      <div class="icon">🟢</div>
+      <div class="label">Yeşil LED</div>
+      <div class="value" style="font-size:1.4em">YANIYOR</div>
+      <div class="hint">Sıcaklık eşiği aşıldı</div>
+    </div>
+
+    <div class="card pump-on">
+      <div class="icon">⚙️</div>
+      <div class="label">Pompa</div>
+      <div class="value" style="font-size:1.4em">AÇIK</div>
+      <div class="hint">Otomatik mod — Nem düşük</div>
+    </div>
+
+  </div>
+
+  <!-- ── Kontrol Paneli ── -->
+  <div class="controls">
+    <h2>⚙️ Pompa Kontrolü</h2>
+    <div class="btn-group">
+      <button class="btn btn-green">Pompa Aç</button>
+      <button class="btn btn-red">Pompa Kapat</button>
+      <button class="btn btn-purple">Otomatik Mod</button>
+    </div>
+  </div>
+
+  <!-- ── Grafik ── -->
+  <div class="chart-box">
+    <h2>📈 Son 1 Saatlik Nem Grafiği</h2>
+    <svg class="sparkline" viewBox="0 0 400 120" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4ecca3" stop-opacity=".35"/>
+          <stop offset="100%" stop-color="#4ecca3" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <!-- Eşik çizgisi -->
+      <line x1="0" y1="90" x2="400" y2="90" stroke="#ff6b6b" stroke-width="1" stroke-dasharray="4"/>
+      <text x="4" y="87" fill="#ff6b6b" font-size="9">Eşik %30</text>
+      <!-- Alan -->
+      <path d="M0,60 C30,55 60,50 90,45 S150,38 180,42 S240,60 270,65 S330,55 370,50 L400,48 L400,120 L0,120 Z"
+            fill="url(#grad)"/>
+      <!-- Çizgi -->
+      <path d="M0,60 C30,55 60,50 90,45 S150,38 180,42 S240,60 270,65 S330,55 370,50 L400,48"
+            fill="none" stroke="#4ecca3" stroke-width="2"/>
+      <!-- Son nokta -->
+      <circle cx="400" cy="48" r="4" fill="#4ecca3"/>
+    </svg>
+    <p style="font-size:.75em;color:#444;margin-top:8px;text-align:center">
+      Bu alan geliştiriciler tarafından gerçek zamanlı veriyle doldurulacak
+    </p>
+  </div>
+
+  <!-- ── Eşik Ayarları ── -->
+  <div class="settings">
+    <h2>🎛️ Eşik Ayarları</h2>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        Nem Eşiği
+        <small>Bu değerin altında pompa devreye girer</small>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" min="10" max="90" value="30" id="humSlider"
+               oninput="document.getElementById('humVal').textContent=this.value+'%'">
+        <span class="setting-val" id="humVal">30%</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        Sıcaklık Eşiği
+        <small>Bu değerin üstünde yeşil LED yanar</small>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" min="15" max="50" value="30" id="tempSlider"
+               oninput="document.getElementById('tempVal').textContent=this.value+'°C'">
+        <span class="setting-val" id="tempVal">30°C</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">
+        Yenileme Süresi
+        <small>Web arayüzü kaç saniyede bir güncellensin</small>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" min="1" max="30" value="3" id="refSlider"
+               oninput="document.getElementById('refVal').textContent=this.value+'sn'">
+        <span class="setting-val" id="refVal">3sn</span>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <button class="btn btn-green" style="font-size:.85em">Kaydet</button>
+      <button class="btn btn-gray"  style="font-size:.85em">Varsayılana Dön</button>
+    </div>
+  </div>
+
+  <!-- ── API Bilgisi ── -->
+  <div class="api-box">
+    <h2>🔌 Geliştirici API Uç Noktaları</h2>
+
+    <p class="desc">Anlık sensör verileri (JSON):</p>
+    <code>GET http://&lt;ESP32_IP&gt;/api</code>
+
+    <p class="desc">Örnek yanıt:</p>
+    <code>{
+  "humidity": 28.4,
+  "temperature": 31.2,
+  "pump": true,
+  "pumpManual": false
+}</code>
+
+    <p class="desc">Pompa kontrolü:</p>
+    <code>GET http://&lt;ESP32_IP&gt;/pump/on    → Pompayı aç (manuel)
+GET http://&lt;ESP32_IP&gt;/pump/off   → Pompayı kapat (manuel)
+GET http://&lt;ESP32_IP&gt;/pump/auto  → Otomatik moda geç</code>
+  </div>
+
+  <!-- ── Not ── -->
+  <div class="note-box">
+    <strong>Geliştirici Notu:</strong> Bu dosya ESP32 üzerinde çalışan web sunucusunun
+    arayüz taslaklarıdır. Gerçek veriler ESP32'nin IP adresinden JSON olarak çekilebilir
+    (<code>/api</code> endpoint). Eşik değerleri şu an yalnızca ESP32 kodunda değiştirilebilmektedir;
+    ileride <code>/settings</code> endpoint'i eklenebilir.
+  </div>
+
+  <footer>Akıllı Tarım Sistemi · ESP32 + DHT22 · Arayüz Taslağı v1.0</footer>
+
+</body>
+</html>
