@@ -33,7 +33,7 @@ python -m http.server 8080   # http://localhost:8080
 2. Repo > **Settings** > **Pages**.
 3. **Source: Deploy from a branch**, branch `main`, klasör `/root` (veya `index.html`'i
    repo köküne/`docs/`'a koy; `arayuz/` alt klasörse Pages onu da sunar:
-   `https://<kullanici>.github.io/<repo>/kmt_bitirme1/arayuz/`).
+   `https://gurkancin.github.io/kmt_bitirme1/arayuz/`).
 4. Birkaç dakikada canlı.
 
 > Not: GitHub Pages HTTPS sunar. Backend de HTTPS (Render) olduğu için karışık-içerik

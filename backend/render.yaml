@@ -5,7 +5,7 @@ services:
     name: akilli-tarim-backend
     runtime: node
     plan: free
-    rootDir: kmt_bitirme1/backend
+    rootDir: backend
     buildCommand: npm install
     startCommand: npm start
     envVars:
