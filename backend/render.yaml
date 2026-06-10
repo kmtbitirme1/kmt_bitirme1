@@ -1,0 +1,13 @@
+# Render Blueprint — bir tiklamayla deploy.
+# Render Dashboard > New > Blueprint > bu repoyu sec.
+services:
+  - type: web
+    name: akilli-tarim-backend
+    runtime: node
+    plan: free
+    rootDir: kmt_bitirme1/backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: INGEST_TOKEN
+        generateValue: true   # Render rastgele bir token uretir; ESP32'ye ayni degeri yaz

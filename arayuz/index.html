@@ -273,46 +273,46 @@
   <header>
     <h1>🌱 Akıllı Tarım Sistemi</h1>
     <p class="sub">ESP32 Tabanlı Otomasyon Paneli</p>
-    <span class="badge">● Canlı Veri — Demo Görünümü</span>
+    <span class="badge">● Canlı Veri</span>
   </header>
 
   <!-- ── Durum Şeridi ── -->
   <div class="status-bar">
-    <div class="status-item"><span class="dot"></span> WiFi Bağlı (192.168.1.10)</div>
-    <div class="status-item"><span class="dot"></span> DHT22 Aktif</div>
-    <div class="status-item"><span class="dot yellow"></span> Pompa Otomatik</div>
-    <div class="status-item"><span class="dot red"></span> Son güncelleme: 2 sn önce</div>
+    <div class="status-item"><span class="dot" id="dotConn"></span> <span id="connText">Bağlanıyor…</span></div>
+    <div class="status-item"><span class="dot" id="dotSensor"></span> <span id="sensorText">DHT22</span></div>
+    <div class="status-item"><span class="dot yellow" id="dotPump"></span> <span id="pumpModeText">Pompa —</span></div>
+    <div class="status-item"><span class="dot" id="dotUpdate"></span> <span id="updateText">Son güncelleme: —</span></div>
   </div>
 
   <!-- ── Sensör Kartları ── -->
   <div class="grid">
 
-    <div class="card warn">
+    <div class="card" id="cardHum">
       <div class="icon">💧</div>
       <div class="label">Nem</div>
-      <div class="value">28.4%</div>
-      <div class="hint">Eşik: %30 — Pompa aktif</div>
+      <div class="value" id="humValue">—</div>
+      <div class="hint" id="humHint">Eşik: %60</div>
     </div>
 
-    <div class="card ok">
+    <div class="card" id="cardTemp">
       <div class="icon">🌡️</div>
       <div class="label">Sıcaklık</div>
-      <div class="value">31.2°C</div>
-      <div class="hint">Eşik: 30°C — LED yanıyor</div>
+      <div class="value" id="tempValue">—</div>
+      <div class="hint" id="tempHint">Eşik: 30°C</div>
     </div>
 
-    <div class="card ok">
+    <div class="card" id="cardLed">
       <div class="icon">🟢</div>
       <div class="label">Yeşil LED</div>
-      <div class="value" style="font-size:1.4em">YANIYOR</div>
-      <div class="hint">Sıcaklık eşiği aşıldı</div>
+      <div class="value" id="ledVal" style="font-size:1.4em">—</div>
+      <div class="hint" id="ledHint">Sıcaklık eşiğine göre</div>
     </div>
 
-    <div class="card pump-on">
+    <div class="card" id="cardPump">
       <div class="icon">⚙️</div>
       <div class="label">Pompa</div>
-      <div class="value" style="font-size:1.4em">AÇIK</div>
-      <div class="hint">Otomatik mod — Nem düşük</div>
+      <div class="value" id="pumpVal" style="font-size:1.4em">—</div>
+      <div class="hint" id="pumpHint">—</div>
     </div>
 
   </div>
@@ -321,9 +321,9 @@
   <div class="controls">
     <h2>⚙️ Pompa Kontrolü</h2>
     <div class="btn-group">
-      <button class="btn btn-green">Pompa Aç</button>
-      <button class="btn btn-red">Pompa Kapat</button>
-      <button class="btn btn-purple">Otomatik Mod</button>
+      <button class="btn btn-green"  onclick="sendCommand('on')">Pompa Aç</button>
+      <button class="btn btn-red"    onclick="sendCommand('off')">Pompa Kapat</button>
+      <button class="btn btn-purple" onclick="sendCommand('auto')">Otomatik Mod</button>
     </div>
   </div>
 
@@ -429,7 +429,126 @@ GET http://&lt;ESP32_IP&gt;/pump/auto  → Otomatik moda geç</code>
     ileride <code>/settings</code> endpoint'i eklenebilir.
   </div>
 
-  <footer>Akıllı Tarım Sistemi · ESP32 + DHT22 · Arayüz Taslağı v1.0</footer>
+  <footer>Akıllı Tarım Sistemi · ESP32 + DHT22 · Canlı Panel v1.0</footer>
+
+  <!-- ══════════════════════════════════════════════════════════
+       CANLI VERİ BAĞLANTISI
+       Backend (Render) URL'sini buraya yaz. Sonundaki / OLMASIN.
+       ══════════════════════════════════════════════════════════ -->
+  <script>
+    const BACKEND_URL = "https://kmt-bitirme1.onrender.com";
+    const POLL_MS = 3000;            // kaç ms'de bir veri çekilsin
+    const TEMP_THRESHOLD = 30;       // °C — bilgi amaçlı (gerçek karar ESP32'de)
+    const HUM_THRESHOLD  = 60;       // %
+
+    const $ = (id) => document.getElementById(id);
+
+    // ── Durum şeridi: bağlantı ──────────────────────────────
+    function setConn(online) {
+      const dot = $("dotConn");
+      dot.className = "dot" + (online ? "" : " red");
+      $("connText").textContent = online ? "Backend bağlı" : "Bağlantı yok";
+    }
+
+    function timeAgo(iso) {
+      if (!iso) return "—";
+      const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+      if (s < 2) return "az önce";
+      if (s < 60) return s + " sn önce";
+      return Math.round(s / 60) + " dk önce";
+    }
+
+    // ── Kartları doldur ─────────────────────────────────────
+    function render(d) {
+      const valid = typeof d.humidity === "number" && typeof d.temperature === "number";
+
+      // Nem
+      $("humValue").textContent = valid ? d.humidity.toFixed(1) + "%" : "---";
+      $("cardHum").className = "card " + (valid && d.humidity > HUM_THRESHOLD ? "ok" : "warn");
+      $("humHint").textContent = "Eşik: %" + HUM_THRESHOLD + (d.pump ? " — Pompa aktif" : "");
+
+      // Sıcaklık
+      $("tempValue").textContent = valid ? d.temperature.toFixed(1) + "°C" : "---";
+      $("cardTemp").className = "card " + (valid && d.temperature > TEMP_THRESHOLD ? "warn" : "ok");
+      $("tempHint").textContent = "Eşik: " + TEMP_THRESHOLD + "°C" + (d.greenLed ? " — LED yanıyor" : "");
+
+      // Yeşil LED
+      $("ledVal").textContent = d.greenLed ? "YANIYOR" : "KAPALI";
+      $("cardLed").className = "card " + (d.greenLed ? "ok" : "");
+
+      // Pompa
+      $("pumpVal").textContent = d.pump ? "AÇIK" : "KAPALI";
+      $("cardPump").className = "card " + (d.pump ? "pump-on" : "");
+      $("pumpHint").textContent = d.pumpManual ? "Manuel mod" : "Otomatik mod";
+
+      // Durum şeridi
+      $("dotSensor").className = "dot" + (valid ? "" : " red");
+      $("sensorText").textContent = valid ? "DHT22 Aktif" : "DHT22 okunamıyor";
+      $("dotPump").className = "dot" + (d.pump ? " yellow" : "");
+      $("pumpModeText").textContent = "Pompa " + (d.pumpManual ? "Manuel" : "Otomatik");
+      $("updateText").textContent = "Son güncelleme: " + timeAgo(d.updatedAt);
+      $("dotUpdate").className = "dot" + (d.online ? "" : " red");
+
+      if (Array.isArray(d.history)) drawChart(d.history);
+    }
+
+    // ── Nem grafiği (SVG sparkline'ı gerçek veriyle çiz) ────
+    function drawChart(history) {
+      const svg = document.querySelector(".sparkline");
+      if (!svg || history.length < 2) return;
+      const W = 400, H = 120;
+      const hums = history.map(p => p.humidity);
+      const min = Math.min(...hums, 0), max = Math.max(...hums, 100);
+      const span = max - min || 1;
+      const pts = hums.map((h, i) => {
+        const x = (i / (hums.length - 1)) * W;
+        const y = H - ((h - min) / span) * (H - 20) - 10;
+        return [x, y];
+      });
+      const line = pts.map(([x, y]) => x.toFixed(1) + "," + y.toFixed(1)).join(" L ");
+      // Eşik çizgisi (nem eşiği seviyesi)
+      const thY = H - ((HUM_THRESHOLD - min) / span) * (H - 20) - 10;
+      svg.innerHTML =
+        '<line x1="0" y1="' + thY.toFixed(1) + '" x2="' + W + '" y2="' + thY.toFixed(1) +
+          '" stroke="#ff6b6b" stroke-width="1" stroke-dasharray="4"/>' +
+        '<text x="4" y="' + (thY - 3).toFixed(1) + '" fill="#ff6b6b" font-size="9">Eşik %' + HUM_THRESHOLD + '</text>' +
+        '<polyline fill="none" stroke="#4ecca3" stroke-width="2" points="' +
+        pts.map(p => p.join(",")).join(" ") + '"/>' +
+        '<circle cx="' + pts[pts.length-1][0].toFixed(1) + '" cy="' +
+        pts[pts.length-1][1].toFixed(1) + '" r="4" fill="#4ecca3"/>';
+    }
+
+    // ── Veri çek ────────────────────────────────────────────
+    async function poll() {
+      try {
+        const r = await fetch(BACKEND_URL + "/api", { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        const d = await r.json();
+        setConn(true);
+        render(d);
+      } catch (e) {
+        setConn(false);
+      }
+    }
+
+    // ── Pompa komutu gönder ─────────────────────────────────
+    async function sendCommand(cmd) {
+      try {
+        await fetch(BACKEND_URL + "/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: cmd }),
+        });
+        // Komut ESP32 bir sonraki döngüde çeker; hemen tekrar oku
+        setTimeout(poll, 500);
+      } catch (e) {
+        alert("Komut gönderilemedi — backend'e ulaşılamıyor.");
+      }
+    }
+
+    poll();
+    setInterval(poll, POLL_MS);
+  </script>
 
 </body>
 </html>
