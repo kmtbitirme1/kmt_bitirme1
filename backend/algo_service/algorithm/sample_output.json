@@ -1,0 +1,29 @@
+{
+  "irrigation_required": true,
+  "decision_label": "ON",
+  "on_probability": 0.693398,
+  "decision_threshold": 0.4,
+  "pump_duration_seconds": 4.0,
+  "moisture_deficit": 20.0,
+  "decision_reason": "ON olasılığı 0.693, 0.40 karar eşiğinin üzerindedir. Nem açığı 20.00 olarak hesaplanmış ve pompa süresi 4.00 saniye belirlenmiştir.",
+  "model_input": {
+    "Soil_Moisture": 35.0,
+    "Temperature": 28.0,
+    "Air_humidity_pct": 60.0,
+    "Pressure_KPa": 101.2
+  },
+  "operational_inputs": {
+    "light_lux": 450.0,
+    "last_irrigation_minutes_ago": 120.0
+  },
+  "config": {
+    "decision_threshold": 0.4,
+    "target_soil_moisture": 55.0,
+    "minimum_irrigation_interval_minutes": 30.0,
+    "seconds_per_moisture_point": 0.2,
+    "min_pump_duration_seconds": 1.0,
+    "max_pump_duration_seconds": 8.0,
+    "pump_flow_lph_min": 80.0,
+    "pump_flow_lph_max": 120.0
+  }
+}

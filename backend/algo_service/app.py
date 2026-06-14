@@ -28,12 +28,10 @@ from pathlib import Path
 from flask import Flask, jsonify, request
 
 # ── Algoritma dosyasını import yoluna ekle ────────────────────
-# Algoritma paketi repo kökünde: ../../final_irrigation_standalone_package_v4
-# Ortam değişkeniyle de override edilebilir (Render/CI için).
-DEFAULT_ALGO_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "final_irrigation_standalone_package_v4"
-)
+# Algoritma servisin yaninda bundle edilmistir: ./algorithm/
+# (Endustri ekibinden gelen dosya repo'ya kopyalandi; Render bu sayede bulur.)
+# Gerekirse ALGO_DIR ortam degiskeniyle baska bir klasor gosterilebilir.
+DEFAULT_ALGO_DIR = Path(__file__).resolve().parent / "algorithm"
 ALGO_DIR = Path(os.environ.get("ALGO_DIR", DEFAULT_ALGO_DIR))
 
 if not (ALGO_DIR / "final_irrigation_algorithm_standalone.py").exists():

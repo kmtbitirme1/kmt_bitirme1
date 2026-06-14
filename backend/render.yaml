@@ -29,7 +29,4 @@ services:
     rootDir: backend/algo_service
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
-    envVars:
-      # Algoritma dosyasi repo kökünde; rootDir'den iki ust + paket klasoru.
-      - key: ALGO_DIR
-        value: /opt/render/project/src/final_irrigation_standalone_package_v4
+    # Algoritma dosyasi ./algorithm/ altinda bundle'li; ekstra ALGO_DIR gerekmez.

@@ -1,0 +1,8 @@
+{
+  "soil_moisture": 35.0,
+  "temperature": 28.0,
+  "air_humidity_pct": 60.0,
+  "pressure_kpa": 101.2,
+  "light_lux": 450.0,
+  "last_irrigation_minutes_ago": 120.0
+}
