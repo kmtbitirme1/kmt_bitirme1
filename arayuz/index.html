@@ -1,975 +1,1263 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Akıllı Tarım Sistemi — Canlı İzleme Paneli</title>
-  <meta name="description" content="ESP32 tabanlı akıllı tarım otomasyon paneli. Nem, sıcaklık takibi ve pompa kontrolü." />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Akıllı Tarım — Kontrol Merkezi</title>
+  <meta name="description" content="ESP32 tabanlı akıllı tarım sulama sistemi kontrol merkezi. Canlı sensör verileri, algoritma kararları ve pompa kontrolü.">
 
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 
   <style>
-    /* ── CSS Custom Properties ─────────────────────────────── */
+    /* ── Variables ─────────────────────────────────────── */
     :root {
-      --bg-primary: #0a0e1a;
-      --bg-secondary: #111827;
-      --bg-card: rgba(17, 24, 39, 0.7);
-      --bg-card-hover: rgba(22, 33, 62, 0.85);
-      --border-subtle: rgba(255, 255, 255, 0.06);
-      --border-glow: rgba(78, 204, 163, 0.25);
-      --accent: #4ecca3;
-      --accent-glow: rgba(78, 204, 163, 0.4);
-      --accent-soft: rgba(78, 204, 163, 0.12);
-      --danger: #ff6b6b;
-      --danger-soft: rgba(255, 107, 107, 0.12);
-      --warning: #fbbf24;
-      --warning-soft: rgba(251, 191, 36, 0.12);
-      --purple: #a78bfa;
-      --purple-soft: rgba(167, 139, 250, 0.12);
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --radius: 16px;
-      --radius-sm: 10px;
-      --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-      --shadow-glow: 0 0 30px rgba(78, 204, 163, 0.08);
-      --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      --bg-base: #080F0B;
+      --bg-sidebar: #0A1610;
+      --bg-surface: #101E16;
+      --bg-surface-2: #152A1E;
+      --bg-hover: #1A3426;
+      --border: rgba(34,197,94,0.08);
+      --border-active: rgba(34,197,94,0.22);
+      --green: #22C55E;
+      --green-dim: rgba(34,197,94,0.15);
+      --amber: #F59E0B;
+      --amber-dim: rgba(245,158,11,0.12);
+      --red: #EF4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --blue: #3B82F6;
+      --text-1: #D4E7DC;
+      --text-2: #7A9B8A;
+      --text-3: #4A6B57;
+      --sidebar-w: 240px;
+      --topbar-h: 52px;
+      --radius: 12px;
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    /* ── Reset & Base ──────────────────────────────────────── */
+    /* ── Reset ─────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-1);
       min-height: 100vh;
-      overflow-x: hidden;
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Animated background gradient mesh */
-    body::before {
+    /* Subtle grid overlay for industrial feel */
+    body::after {
       content: '';
       position: fixed;
       inset: 0;
-      background:
-        radial-gradient(ellipse 600px 400px at 20% 10%, rgba(78, 204, 163, 0.08) 0%, transparent 70%),
-        radial-gradient(ellipse 500px 500px at 80% 80%, rgba(167, 139, 250, 0.06) 0%, transparent 70%),
-        radial-gradient(ellipse 400px 300px at 60% 40%, rgba(56, 189, 248, 0.04) 0%, transparent 70%);
+      background-image:
+        linear-gradient(rgba(34,197,94,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,197,94,0.015) 1px, transparent 1px);
+      background-size: 48px 48px;
       pointer-events: none;
       z-index: 0;
-      animation: meshFloat 20s ease-in-out infinite alternate;
     }
 
-    @keyframes meshFloat {
-      0% { transform: translate(0, 0) scale(1); }
-      50% { transform: translate(-20px, 15px) scale(1.03); }
-      100% { transform: translate(10px, -10px) scale(0.98); }
-    }
-
-    .container {
-      position: relative;
-      z-index: 1;
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 24px 20px 60px;
-    }
-
-    /* ── Header ────────────────────────────────────────────── */
-    header {
-      text-align: center;
-      margin-bottom: 12px;
-      padding-top: 16px;
-    }
-
-    header h1 {
-      font-size: clamp(1.6rem, 4vw, 2.2rem);
-      font-weight: 800;
-      background: linear-gradient(135deg, #4ecca3, #38bdf8, #a78bfa);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: gradientShift 6s ease infinite;
-      letter-spacing: -0.5px;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-
-    header p.sub {
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      font-weight: 500;
-      margin-top: 6px;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      border: 1px solid rgba(78, 204, 163, 0.2);
-      border-radius: 100px;
-      padding: 4px 14px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      margin-top: 10px;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
-
-    .badge::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-      animation: pulse 2s infinite;
-    }
-
-    /* ── Status Bar ────────────────────────────────────────── */
-    .status-bar {
+    /* ── Sidebar ──────────────────────────────────────── */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
       display: flex;
-      justify-content: center;
-      gap: 20px;
-      flex-wrap: wrap;
-      margin: 18px auto 28px;
-      padding: 14px 20px;
-      background: var(--bg-card);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      flex-direction: column;
+      z-index: 50;
+      overflow-y: auto;
     }
 
-    .status-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.78rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent-glow);
-      animation: pulse 2s infinite;
-      transition: background var(--transition), box-shadow var(--transition);
-    }
-
-    .dot.red {
-      background: var(--danger);
-      box-shadow: 0 0 8px rgba(255, 107, 107, 0.5);
-    }
-
-    .dot.yellow {
-      background: var(--warning);
-      box-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.85); }
-    }
-
-    /* ── Card Grid ─────────────────────────────────────────── */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .card {
-      position: relative;
-      background: var(--bg-card);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: var(--radius);
-      padding: 24px 20px 20px;
-      text-align: center;
-      border: 1px solid var(--border-subtle);
-      box-shadow: var(--shadow);
-      transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
-      overflow: hidden;
-    }
-
-    .card::before {
+    .sidebar::before {
       content: '';
       position: absolute;
       top: 0;
       left: 0;
       right: 0;
       height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0;
-      transition: opacity var(--transition);
+      background: linear-gradient(90deg, transparent, var(--green), transparent);
+      opacity: 0.6;
     }
 
-    .card:hover {
-      transform: translateY(-4px);
-      border-color: var(--border-glow);
-      box-shadow: var(--shadow), var(--shadow-glow);
+    .sb-brand {
+      padding: 24px 20px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .card:hover::before { opacity: 1; }
-
-    .card .icon {
-      font-size: 2rem;
-      margin-bottom: 8px;
-      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+    .sb-brand .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--green-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--green);
+      flex-shrink: 0;
     }
 
-    .card .label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      color: var(--text-muted);
+    .sb-brand h1 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
       text-transform: uppercase;
-      letter-spacing: 1.2px;
-      margin-bottom: 4px;
+      color: var(--text-1);
+      line-height: 1.2;
     }
 
-    .card .value {
-      font-size: 2.2rem;
-      font-weight: 800;
-      color: var(--accent);
-      line-height: 1.1;
-      margin: 6px 0 6px;
-      transition: color var(--transition);
-    }
-
-    .card .hint {
-      font-size: 0.72rem;
-      color: var(--text-muted);
+    .sb-brand span {
+      font-size: 0.68rem;
+      color: var(--text-3);
       font-weight: 500;
     }
 
-    /* Card states */
-    .card.warn {
-      border-color: rgba(255, 107, 107, 0.2);
+    .sb-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .card.warn::before {
-      background: linear-gradient(90deg, transparent, var(--danger), transparent);
-      opacity: 0.6;
+    .sb-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 1.8px;
+      margin-bottom: 12px;
     }
 
-    .card.warn .value { color: var(--danger); }
-
-    .card.ok {
-      border-color: rgba(78, 204, 163, 0.2);
+    /* Device item */
+    .device-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-active);
     }
 
-    .card.ok::before {
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      opacity: 0.6;
+    .device-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-3);
+      flex-shrink: 0;
+      transition: all 0.4s var(--ease);
     }
 
-    .card.pump-on {
-      border-color: rgba(251, 191, 36, 0.2);
+    .device-dot.online {
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(34,197,94,0.5);
     }
 
-    .card.pump-on::before {
-      background: linear-gradient(90deg, transparent, var(--warning), transparent);
-      opacity: 0.8;
+    .device-dot.offline {
+      background: var(--red);
+      box-shadow: 0 0 8px rgba(239,68,68,0.4);
     }
 
-    .card.pump-on .value { color: var(--warning); }
+    .device-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-1);
+    }
 
-    /* ── Glass Panel (shared) ──────────────────────────────── */
-    .glass-panel {
-      background: var(--bg-card);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 24px;
-      box-shadow: var(--shadow);
+    .device-status {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      font-weight: 500;
+    }
+
+    /* System rows */
+    .sys-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 0;
+      font-size: 0.78rem;
+      color: var(--text-2);
+    }
+
+    .sys-row i { width: 14px; height: 14px; color: var(--text-3); }
+
+    .sys-badge {
+      margin-left: auto;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sys-badge.ok { background: var(--green-dim); color: var(--green); }
+    .sys-badge.err { background: var(--red-dim); color: var(--red); }
+    .sys-badge.wait { background: rgba(255,255,255,0.05); color: var(--text-3); }
+
+    .sb-footer {
+      margin-top: auto;
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 0.68rem;
+      color: var(--text-3);
+      line-height: 1.6;
+    }
+
+    /* ── Main ─────────────────────────────────────────── */
+    .main {
+      position: relative;
+      z-index: 1;
+      grid-column: 2;
+      padding: 0 36px 48px;
+      min-height: 100vh;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
+    /* Mobile menu button */
+    .menu-btn {
+      display: none;
+      position: fixed;
+      top: 10px;
+      left: 12px;
+      z-index: 60;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-2);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .menu-btn i { width: 20px; height: 20px; }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 49;
+    }
+
+    .sidebar-overlay.show { display: block; }
+
+    /* ── Top Bar ──────────────────────────────────────── */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      height: var(--topbar-h);
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      padding: 0 4px;
+      background: rgba(8,15,11,0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
       margin-bottom: 24px;
     }
 
-    .glass-panel h2 {
-      font-size: 0.78rem;
+    .topbar-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-2);
+    }
+
+    .topbar-item i { width: 14px; height: 14px; }
+
+    .topbar-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-3);
+      transition: all 0.4s var(--ease);
+    }
+
+    .topbar-dot.on { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .topbar-dot.off { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+
+    .topbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* ── Section Titles ───────────────────────────────── */
+    .section-title {
+      font-size: 0.68rem;
       font-weight: 700;
-      color: var(--text-secondary);
+      color: var(--text-3);
       text-transform: uppercase;
-      letter-spacing: 1.2px;
-      margin-bottom: 18px;
+      letter-spacing: 2px;
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .glass-panel h2 .h2-icon {
-      font-size: 1rem;
+    .section-title i { width: 14px; height: 14px; }
+
+    /* ── Gauge Grid ───────────────────────────────────── */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+      margin-bottom: 28px;
     }
 
-    /* ── Controls ──────────────────────────────────────────── */
-    .controls { /* uses .glass-panel */ }
-
-    .btn-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
+    .gauge-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 16px 16px;
+      text-align: center;
+      transition: border-color 0.3s var(--ease);
     }
 
-    .btn {
-      position: relative;
-      padding: 12px 24px;
-      border: none;
-      border-radius: var(--radius-sm);
-      font-family: 'Inter', sans-serif;
-      font-size: 0.88rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all var(--transition);
-      overflow: hidden;
-      outline: none;
-    }
+    .gauge-card:hover { border-color: var(--border-active); }
 
-    .btn::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%);
-      pointer-events: none;
-    }
-
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
-    .btn:active { transform: translateY(0) scale(0.97); }
-
-    .btn-green {
-      background: linear-gradient(135deg, #4ecca3, #38d9a9);
-      color: #0a1628;
-    }
-
-    .btn-green:hover { box-shadow: 0 4px 20px rgba(78, 204, 163, 0.4); }
-
-    .btn-red {
-      background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
-      color: #fff;
-    }
-
-    .btn-red:hover { box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4); }
-
-    .btn-purple {
-      background: linear-gradient(135deg, #a78bfa, #8b5cf6);
-      color: #fff;
-    }
-
-    .btn-purple:hover { box-shadow: 0 4px 20px rgba(167, 139, 250, 0.4); }
-
-    .btn-gray {
-      background: rgba(100, 116, 139, 0.2);
-      color: var(--text-secondary);
-      border: 1px solid var(--border-subtle);
-    }
-
-    .btn-gray:hover { background: rgba(100, 116, 139, 0.3); }
-
-    /* Active button indicator */
-    .btn.active-cmd {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-
-    /* ── Chart ─────────────────────────────────────────────── */
-    .chart-box { /* uses .glass-panel */ }
-
-    .chart-container {
-      position: relative;
-      height: 220px;
-      width: 100%;
-    }
-
-    /* Keep old SVG for backwards compat but hide it */
-    .sparkline { display: none; }
-
-    /* ── Settings ──────────────────────────────────────────── */
-    .settings { /* uses .glass-panel */ }
-
-    .setting-row {
+    .gauge-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 14px 0;
-      border-bottom: 1px solid var(--border-subtle);
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .setting-row:last-of-type { border-bottom: none; }
-
-    .setting-label {
-      font-size: 0.88rem;
-      color: var(--text-primary);
-      font-weight: 500;
-    }
-
-    .setting-label small {
-      display: block;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-weight: 400;
-      margin-top: 2px;
-    }
-
-    /* Custom range slider */
-    .setting-row input[type=range] {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 140px;
-      height: 6px;
-      background: rgba(78, 204, 163, 0.15);
-      border-radius: 100px;
-      outline: none;
-      transition: background var(--transition);
-    }
-
-    .setting-row input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      box-shadow: 0 0 10px var(--accent-glow);
-      transition: transform var(--transition);
-    }
-
-    .setting-row input[type=range]::-webkit-slider-thumb:hover {
-      transform: scale(1.15);
-    }
-
-    .setting-row input[type=range]::-moz-range-thumb {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      border: none;
-      box-shadow: 0 0 10px var(--accent-glow);
-    }
-
-    .setting-val {
-      color: var(--accent);
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      font-size: 0.68rem;
       font-weight: 700;
-      min-width: 50px;
-      text-align: right;
-      font-size: 0.88rem;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .gauge-header i { width: 13px; height: 13px; }
+
+    /* SVG Gauge */
+    .gauge-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 160px;
+      margin: 0 auto;
+      aspect-ratio: 1;
+    }
+
+    .gauge-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .gauge-track {
+      fill: none;
+      stroke: var(--bg-surface-2);
+      stroke-width: 10;
+      stroke-linecap: round;
+    }
+
+    .gauge-fill {
+      fill: none;
+      stroke: var(--green);
+      stroke-width: 10;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.8s var(--ease), stroke 0.4s var(--ease);
+    }
+
+    .gauge-fill.amber { stroke: var(--amber); }
+    .gauge-fill.red { stroke: var(--red); }
+
+    .gauge-center {
+      position: absolute;
+      top: 44%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .gauge-num {
+      display: block;
+      min-width: 60px;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--text-1);
+      line-height: 1;
       font-variant-numeric: tabular-nums;
     }
 
-    .settings-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 18px;
+    .gauge-unit {
+      font-size: 0.7rem;
+      color: var(--text-3);
+      font-weight: 600;
+      margin-top: 2px;
     }
 
-    /* ── API Box ───────────────────────────────────────────── */
-    .api-box {
-      background: rgba(15, 23, 42, 0.6);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(78, 204, 163, 0.12);
+    .gauge-footer {
+      margin-top: 6px;
+      font-size: 0.7rem;
+      color: var(--text-3);
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    .gauge-status {
+      display: inline-block;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.62rem;
+      letter-spacing: 0.3px;
+    }
+
+    .gauge-status.ok { background: var(--green-dim); color: var(--green); }
+    .gauge-status.warn { background: var(--amber-dim); color: var(--amber); }
+    .gauge-status.bad { background: var(--red-dim); color: var(--red); }
+
+    /* Pump card — distinct from gauges */
+    .pump-card .pump-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px solid var(--text-3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 10px auto 12px;
+      transition: all 0.5s var(--ease);
+      color: var(--text-3);
+    }
+
+    .pump-card .pump-ring i { width: 28px; height: 28px; }
+
+    .pump-card .pump-ring.active {
+      border-color: var(--amber);
+      color: var(--amber);
+      box-shadow: 0 0 24px rgba(245,158,11,0.25), inset 0 0 12px rgba(245,158,11,0.08);
+      animation: pumpGlow 2s ease-in-out infinite;
+    }
+
+    @keyframes pumpGlow {
+      0%, 100% { box-shadow: 0 0 24px rgba(245,158,11,0.25), inset 0 0 12px rgba(245,158,11,0.08); }
+      50% { box-shadow: 0 0 32px rgba(245,158,11,0.4), inset 0 0 16px rgba(245,158,11,0.12); }
+    }
+
+    .pump-val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .pump-mode {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* LED card — distinct from gauges */
+    .led-card .led-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px solid var(--text-3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 10px auto 12px;
+      transition: all 0.5s var(--ease);
+      color: var(--text-3);
+    }
+
+    .led-card .led-ring i { width: 28px; height: 28px; }
+
+    .led-card .led-ring.active {
+      border-color: var(--green);
+      color: var(--green);
+      box-shadow: 0 0 24px rgba(34,197,94,0.25), inset 0 0 12px rgba(34,197,94,0.08);
+      animation: ledGlow 2s ease-in-out infinite;
+    }
+
+    @keyframes ledGlow {
+      0%, 100% { box-shadow: 0 0 24px rgba(34,197,94,0.25), inset 0 0 12px rgba(34,197,94,0.08); }
+      50% { box-shadow: 0 0 32px rgba(34,197,94,0.4), inset 0 0 16px rgba(34,197,94,0.12); }
+    }
+
+    .led-val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .led-hint {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* ── Decision Panel ───────────────────────────────── */
+    .decision-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 24px;
-      box-shadow: var(--shadow);
+      padding: 20px;
       margin-bottom: 24px;
     }
 
-    .api-box h2 {
-      font-size: 0.78rem;
+    .decision-panel.on { border-color: rgba(245,158,11,0.2); }
+    .decision-panel.off { border-color: rgba(34,197,94,0.15); }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: auto 1fr 1fr 1fr;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .decision-badge {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.88rem;
       font-weight: 700;
-      color: var(--accent);
+      letter-spacing: 1px;
       text-transform: uppercase;
-      letter-spacing: 1.2px;
+      white-space: nowrap;
+    }
+
+    .decision-badge.sula { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+    .decision-badge.bekle { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.15); }
+    .decision-badge.none { background: rgba(255,255,255,0.03); color: var(--text-3); border: 1px solid var(--border); }
+
+    .decision-metric { text-align: center; }
+    .decision-metric .dm-val {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text-1);
+      font-variant-numeric: tabular-nums;
+    }
+    .decision-metric .dm-label {
+      font-size: 0.62rem;
+      color: var(--text-3);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-top: 2px;
+    }
+
+    .decision-reason {
+      font-size: 0.78rem;
+      color: var(--text-2);
+      padding: 12px 14px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      border-left: 3px solid var(--text-3);
+      line-height: 1.5;
+    }
+
+    .decision-reason.on { border-left-color: var(--amber); }
+    .decision-reason.off { border-left-color: var(--green); }
+
+    /* ── Mid Grid (Controls + Timeline) ───────────────── */
+    .mid-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .panel-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .api-box code {
-      display: block;
-      background: rgba(10, 14, 26, 0.7);
-      border-radius: var(--radius-sm);
+    .panel-title i { width: 14px; height: 14px; }
+
+    /* Control buttons */
+    .ctrl-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .ctrl-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       padding: 14px 16px;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 0.8rem;
-      color: var(--purple);
-      margin-bottom: 10px;
-      word-break: break-all;
-      border: 1px solid var(--border-subtle);
-      line-height: 1.6;
-    }
-
-    .api-box .desc {
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-
-    /* ── Note Box ──────────────────────────────────────────── */
-    .note-box {
-      background: rgba(78, 204, 163, 0.05);
-      border-left: 3px solid var(--accent);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      padding: 16px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-2);
+      font-family: inherit;
       font-size: 0.82rem;
-      color: var(--text-secondary);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s var(--ease);
+    }
+
+    .ctrl-btn i { width: 16px; height: 16px; }
+
+    .ctrl-btn:hover { background: var(--bg-hover); border-color: var(--border-active); color: var(--text-1); }
+
+    .ctrl-btn.active {
+      border-color: var(--green);
+      background: var(--green-dim);
+      color: var(--green);
+    }
+
+    .ctrl-btn.pump-on-btn:hover { background: rgba(34,197,94,0.1); border-color: var(--green); color: var(--green); }
+    .ctrl-btn.pump-off-btn:hover { background: rgba(239,68,68,0.08); border-color: var(--red); color: var(--red); }
+    .ctrl-btn.pump-auto-btn:hover { background: rgba(59,130,246,0.08); border-color: var(--blue); color: var(--blue); }
+
+    /* Timeline */
+    .timeline { list-style: none; }
+
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 8px 0;
+      position: relative;
+    }
+
+    .timeline-item + .timeline-item { border-top: 1px solid var(--border); }
+
+    .tl-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .tl-dot.on { background: var(--amber); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+    .tl-dot.off { background: var(--text-3); }
+
+    .tl-time {
+      font-size: 0.7rem;
+      color: var(--text-3);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+    }
+
+    .tl-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .tl-label.on { color: var(--amber); }
+    .tl-label.off { color: var(--text-2); }
+
+    .tl-dur {
+      margin-left: auto;
+      font-size: 0.68rem;
+      color: var(--text-3);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tl-empty {
+      font-size: 0.75rem;
+      color: var(--text-3);
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    /* ── Chart ─────────────────────────────────────────── */
+    .chart-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
       margin-bottom: 24px;
-      line-height: 1.6;
     }
 
-    .note-box strong {
-      color: var(--accent);
-      font-weight: 600;
+    .chart-container {
+      position: relative;
+      height: 240px;
+      width: 100%;
     }
 
-    .note-box code {
-      background: rgba(167, 139, 250, 0.1);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.78rem;
-      color: var(--purple);
-    }
-
-    /* ── Footer ────────────────────────────────────────────── */
-    footer {
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.72rem;
-      padding: 20px 0 0;
-      font-weight: 500;
-    }
-
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    /* ── Connection Overlay ────────────────────────────────── */
-    .offline-banner {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 10px;
-      background: linear-gradient(135deg, rgba(255, 107, 107, 0.95), rgba(238, 90, 111, 0.95));
-      color: #fff;
-      text-align: center;
-      font-size: 0.82rem;
-      font-weight: 600;
-      z-index: 100;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 20px rgba(255, 107, 107, 0.3);
-      animation: slideDown 0.4s ease-out;
-    }
-
-    .offline-banner.show { display: block; }
-
-    @keyframes slideDown {
-      from { transform: translateY(-100%); }
-      to { transform: translateY(0); }
-    }
-
-    /* ── Toast Notification ────────────────────────────────── */
+    /* ── Toast ─────────────────────────────────────────── */
     .toast {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 14px 22px;
-      border-radius: var(--radius-sm);
-      font-size: 0.84rem;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.82rem;
       font-weight: 600;
-      color: #fff;
+      font-family: inherit;
       z-index: 200;
       opacity: 0;
-      transform: translateY(20px);
-      transition: all 0.4s ease;
+      transform: translateY(12px);
+      transition: all 0.35s var(--ease);
       pointer-events: none;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok { background: var(--green); color: #071209; }
+    .toast.err { background: var(--red); color: #fff; }
+
+    /* ── Responsive ────────────────────────────────────── */
+    @media (max-width: 1024px) {
+      .gauge-grid { grid-template-columns: repeat(2, 1fr); }
+      .decision-grid { grid-template-columns: auto 1fr; }
+      .decision-metric:last-child { display: none; }
     }
 
-    .toast.success { background: linear-gradient(135deg, #4ecca3, #38d9a9); color: #0a1628; }
-    .toast.error { background: linear-gradient(135deg, #ff6b6b, #ee5a6f); }
+    @media (max-width: 768px) {
+      body { grid-template-columns: 1fr; }
 
-    /* ── Loading Skeleton ──────────────────────────────────── */
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
+      .sidebar {
+        position: fixed;
+        left: calc(-1 * var(--sidebar-w));
+        transition: left 0.3s var(--ease);
+      }
+
+      .sidebar.open { left: 0; }
+
+      .menu-btn { display: flex; }
+
+      .main {
+        grid-column: 1;
+        padding: 0 16px 40px;
+      }
+
+      .topbar { padding-left: 52px; }
+
+      .mid-grid { grid-template-columns: 1fr; }
+
+      .decision-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .decision-badge { text-align: center; }
     }
 
-    .skeleton {
-      background: linear-gradient(90deg, var(--bg-secondary) 25%, rgba(255,255,255,0.05) 50%, var(--bg-secondary) 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.5s infinite;
-      border-radius: 6px;
-    }
-
-    /* ── Responsive ────────────────────────────────────────── */
-    @media (max-width: 640px) {
-      .container { padding: 16px 12px 48px; }
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-      .card { padding: 18px 14px 16px; }
-      .card .value { font-size: 1.7rem; }
-      .status-bar { gap: 12px; padding: 12px 14px; }
-      .glass-panel { padding: 18px 16px; }
+    @media (max-width: 480px) {
+      .gauge-grid { gap: 10px; }
+      .gauge-num { font-size: 1.4rem; }
+      .gauge-wrap { max-width: 120px; }
+      .pump-card .pump-ring { width: 64px; height: 64px; }
+      .pump-card .pump-ring i { width: 22px; height: 22px; }
       .chart-container { height: 180px; }
-      .btn { padding: 10px 18px; font-size: 0.82rem; }
-      .btn-group { justify-content: center; }
-    }
-
-    @media (max-width: 380px) {
-      .grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Offline Banner -->
-  <div class="offline-banner" id="offlineBanner">
-    ⚠️ Backend bağlantısı kesildi — veriler güncellenmiyor
-  </div>
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-brand">
+      <div class="brand-icon"><i data-lucide="wheat"></i></div>
+      <div>
+        <h1>Akıllı Tarım</h1>
+        <span>Kontrol Merkezi</span>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Cihazlar</div>
+      <div class="device-item">
+        <span class="device-dot" id="deviceDot"></span>
+        <div>
+          <div class="device-name">Sera #1</div>
+          <div class="device-status" id="deviceStatusText">Bağlanıyor…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Sistem Durumu</div>
+      <div class="sys-row">
+        <i data-lucide="cpu"></i>
+        <span>ESP32</span>
+        <span class="sys-badge wait" id="sysEsp">—</span>
+      </div>
+      <div class="sys-row">
+        <i data-lucide="server"></i>
+        <span>Backend</span>
+        <span class="sys-badge wait" id="sysBackend">—</span>
+      </div>
+      <div class="sys-row">
+        <i data-lucide="brain"></i>
+        <span>Algoritma</span>
+        <span class="sys-badge wait" id="sysAlgo">—</span>
+      </div>
+      <div class="sys-row">
+        <i data-lucide="radio"></i>
+        <span>Mod</span>
+        <span class="sys-badge wait" id="sysMode">—</span>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Sensörler</div>
+      <div class="sys-row">
+        <i data-lucide="thermometer"></i>
+        <span>DHT22</span>
+        <span class="sys-badge wait" id="sysDht">—</span>
+      </div>
+      <div class="sys-row">
+        <i data-lucide="gauge"></i>
+        <span>BMP280</span>
+        <span class="sys-badge wait" id="sysBmp">—</span>
+      </div>
+    </div>
+
+    <div class="sb-footer">
+      ESP32 + DHT22 + BMP280<br>
+      Akıllı Tarım v2.0
+    </div>
+  </aside>
+
+  <!-- Mobile overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- ═══ Main Content ═══ -->
+  <main class="main" id="main">
+    <button class="menu-btn" id="menuBtn" aria-label="Menü aç/kapat">
+      <i data-lucide="menu"></i>
+    </button>
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-item">
+        <span class="topbar-dot" id="connDot"></span>
+        <span id="connLabel">Backend bağlanıyor…</span>
+      </div>
+      <div class="topbar-item">
+        <i data-lucide="wifi"></i>
+        <span id="espLabel">ESP32 —</span>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-item">
+          <i data-lucide="clock"></i>
+          <span id="updateLabel">Son güncelleme: —</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gauge Cards -->
+    <div class="section-title"><i data-lucide="activity"></i> Sensör Verileri</div>
+    <div class="gauge-grid">
+
+      <!-- Nem Gauge -->
+      <div class="gauge-card" id="cardNem">
+        <div class="gauge-header"><i data-lucide="droplets"></i><span>Nem</span></div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 200 200" class="gauge-svg">
+            <circle class="gauge-track" cx="100" cy="100" r="70"
+                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+            <circle class="gauge-fill" cx="100" cy="100" r="70" id="nemFill"
+                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
+                    transform="rotate(135 100 100)"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="nemVal">—</span>
+            <div class="gauge-unit">%</div>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="gauge-status wait" id="nemStatus">Bekleniyor</span>
+        </div>
+      </div>
+
+      <!-- Sıcaklık Gauge -->
+      <div class="gauge-card" id="cardTemp">
+        <div class="gauge-header"><i data-lucide="thermometer"></i><span>Sıcaklık</span></div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 200 200" class="gauge-svg">
+            <circle class="gauge-track" cx="100" cy="100" r="70"
+                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+            <circle class="gauge-fill" cx="100" cy="100" r="70" id="tempFill"
+                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
+                    transform="rotate(135 100 100)"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="tempVal">—</span>
+            <div class="gauge-unit">°C</div>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="gauge-status wait" id="tempStatus">Bekleniyor</span>
+        </div>
+      </div>
+
+      <!-- Yeşil LED (Lamba) Card -->
+      <div class="gauge-card led-card" id="cardLed">
+        <div class="gauge-header"><i data-lucide="lightbulb"></i><span>Yeşil LED (Lamba)</span></div>
+        <div class="led-ring" id="ledRing">
+          <i data-lucide="lightbulb"></i>
+        </div>
+        <div class="led-val" id="ledVal">—</div>
+        <div class="led-hint" id="ledHint">Sıcaklık eşiğine göre</div>
+        <div class="gauge-footer" style="margin-top:8px">
+          <span class="gauge-status wait" id="ledStatus">Bekleniyor</span>
+        </div>
+      </div>
+
+      <!-- Pompa Card -->
+      <div class="gauge-card pump-card" id="cardPump">
+        <div class="gauge-header"><i data-lucide="power"></i><span>Pompa</span></div>
+        <div class="pump-ring" id="pumpRing">
+          <i data-lucide="droplets"></i>
+        </div>
+        <div class="pump-val" id="pumpVal">—</div>
+        <div class="pump-mode" id="pumpMode">—</div>
+        <div class="gauge-footer" style="margin-top:8px">
+          <span class="gauge-status wait" id="pumpStatus">Bekleniyor</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Algorithm Decision Panel -->
+    <div class="section-title"><i data-lucide="brain"></i> Algoritma Kararı</div>
+    <div class="decision-panel" id="decisionPanel">
+      <div class="decision-grid">
+        <div class="decision-badge none" id="decBadge">BEKLE</div>
+        <div class="decision-metric">
+          <div class="dm-val" id="probVal">—</div>
+          <div class="dm-label">ON Olasılığı</div>
+        </div>
+        <div class="decision-metric">
+          <div class="dm-val" id="durVal">—</div>
+          <div class="dm-label">Pompa Süresi</div>
+        </div>
+        <div class="decision-metric">
+          <div class="dm-val" id="defVal">—</div>
+          <div class="dm-label">Nem Açığı</div>
+        </div>
+      </div>
+      <div class="decision-reason" id="reasonBox">Algoritma kararı bekleniyor…</div>
+    </div>
+
+    <!-- Controls + Timeline -->
+    <div class="mid-grid">
+      <div class="panel">
+        <div class="panel-title"><i data-lucide="sliders-horizontal"></i> Pompa Kontrolü</div>
+        <div class="ctrl-group">
+          <button class="ctrl-btn pump-on-btn" id="btnOn" onclick="sendCommand('on')">
+            <i data-lucide="play"></i> Pompa Aç
+          </button>
+          <button class="ctrl-btn pump-off-btn" id="btnOff" onclick="sendCommand('off')">
+            <i data-lucide="square"></i> Pompa Kapat
+          </button>
+          <button class="ctrl-btn pump-auto-btn" id="btnAuto" onclick="sendCommand('auto')">
+            <i data-lucide="bot"></i> Otomatik Mod
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title"><i data-lucide="history"></i> Son Kararlar</div>
+        <ul class="timeline" id="timeline">
+          <li class="tl-empty">Henüz karar kaydı yok</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-panel">
+      <div class="panel-title"><i data-lucide="trending-up"></i> Nem &amp; Sıcaklık Grafiği</div>
+      <div class="chart-container">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
+  </main>
 
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
-  <div class="container">
-
-    <!-- ── Header ── -->
-    <header>
-      <h1>🌱 Akıllı Tarım Sistemi</h1>
-      <p class="sub">ESP32 Tabanlı Otomasyon Paneli</p>
-      <span class="badge">Canlı Veri</span>
-    </header>
-
-    <!-- ── Status Bar ── -->
-    <div class="status-bar">
-      <div class="status-item"><span class="dot" id="dotConn"></span> <span id="connText">Bağlanıyor…</span></div>
-      <div class="status-item"><span class="dot" id="dotSensor"></span> <span id="sensorText">DHT22</span></div>
-      <div class="status-item"><span class="dot yellow" id="dotPump"></span> <span id="pumpModeText">Pompa —</span></div>
-      <div class="status-item"><span class="dot" id="dotUpdate"></span> <span id="updateText">Son güncelleme: —</span></div>
-    </div>
-
-    <!-- ── Sensor Cards ── -->
-    <div class="grid">
-
-      <div class="card" id="cardHum">
-        <div class="icon">💧</div>
-        <div class="label">Nem</div>
-        <div class="value" id="humValue">—</div>
-        <div class="hint" id="humHint">Eşik: %60</div>
-      </div>
-
-      <div class="card" id="cardTemp">
-        <div class="icon">🌡️</div>
-        <div class="label">Sıcaklık</div>
-        <div class="value" id="tempValue">—</div>
-        <div class="hint" id="tempHint">Eşik: 30°C</div>
-      </div>
-
-      <div class="card" id="cardLed">
-        <div class="icon">🟢</div>
-        <div class="label">Yeşil LED</div>
-        <div class="value" id="ledVal" style="font-size:1.4em">—</div>
-        <div class="hint" id="ledHint">Sıcaklık eşiğine göre</div>
-      </div>
-
-      <div class="card" id="cardPump">
-        <div class="icon">⚙️</div>
-        <div class="label">Pompa</div>
-        <div class="value" id="pumpVal" style="font-size:1.4em">—</div>
-        <div class="hint" id="pumpHint">—</div>
-      </div>
-
-    </div>
-
-    <!-- ── Algoritma Karar Paneli ── -->
-    <div class="glass-panel" id="decisionPanel">
-      <h2><span class="h2-icon">🧠</span> Sulama Algoritması Kararı</h2>
-      <div class="grid" style="margin-bottom:0">
-        <div class="card" id="cardDecision">
-          <div class="icon">🚦</div>
-          <div class="label">Karar</div>
-          <div class="value" id="decisionVal" style="font-size:1.4em">—</div>
-          <div class="hint" id="decisionHint">Otomatik mod</div>
-        </div>
-        <div class="card" id="cardProb">
-          <div class="icon">📊</div>
-          <div class="label">ON Olasılığı</div>
-          <div class="value" id="probVal">—</div>
-          <div class="hint" id="probHint">Eşik: 0.40</div>
-        </div>
-        <div class="card" id="cardDuration">
-          <div class="icon">⏱️</div>
-          <div class="label">Pompa Süresi</div>
-          <div class="value" id="durationVal">—</div>
-          <div class="hint">algoritma önerisi</div>
-        </div>
-        <div class="card" id="cardDeficit">
-          <div class="icon">🪴</div>
-          <div class="label">Nem Açığı</div>
-          <div class="value" id="deficitVal">—</div>
-          <div class="hint">hedef: %55</div>
-        </div>
-      </div>
-      <div class="note-box" id="reasonBox" style="margin-top:18px;margin-bottom:0">
-        <strong>Açıklama:</strong> <span id="reasonText">Algoritma kararı bekleniyor…</span>
-      </div>
-    </div>
-
-    <!-- ── Controls ── -->
-    <div class="glass-panel controls">
-      <h2><span class="h2-icon">⚙️</span> Pompa Kontrolü</h2>
-      <div class="btn-group">
-        <button class="btn btn-green" id="btnOn" onclick="sendCommand('on')">💧 Pompa Aç</button>
-        <button class="btn btn-red" id="btnOff" onclick="sendCommand('off')">🛑 Pompa Kapat</button>
-        <button class="btn btn-purple" id="btnAuto" onclick="sendCommand('auto')">🤖 Otomatik Mod</button>
-      </div>
-    </div>
-
-    <!-- ── Chart ── -->
-    <div class="glass-panel chart-box">
-      <h2><span class="h2-icon">📈</span> Son 1 Saatlik Nem &amp; Sıcaklık Grafiği</h2>
-      <div class="chart-container">
-        <canvas id="mainChart"></canvas>
-      </div>
-      <!-- Hidden SVG for backward compatibility -->
-      <svg class="sparkline" viewBox="0 0 400 120" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#4ecca3" stop-opacity=".35"/>
-            <stop offset="100%" stop-color="#4ecca3" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-      </svg>
-    </div>
-
-    <!-- ── Threshold Settings ── -->
-    <div class="glass-panel settings">
-      <h2><span class="h2-icon">🎛️</span> Eşik Ayarları</h2>
-
-      <div class="setting-row">
-        <div class="setting-label">
-          Nem Eşiği
-          <small>Bu değerin altında pompa devreye girer</small>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="range" min="10" max="90" value="30" id="humSlider"
-                 oninput="document.getElementById('humVal').textContent=this.value+'%'">
-          <span class="setting-val" id="humVal">30%</span>
-        </div>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-label">
-          Sıcaklık Eşiği
-          <small>Bu değerin üstünde yeşil LED yanar</small>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="range" min="15" max="50" value="30" id="tempSlider"
-                 oninput="document.getElementById('tempVal').textContent=this.value+'°C'">
-          <span class="setting-val" id="tempVal">30°C</span>
-        </div>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-label">
-          Yenileme Süresi
-          <small>Web arayüzü kaç saniyede bir güncellensin</small>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="range" min="1" max="30" value="3" id="refSlider"
-                 oninput="document.getElementById('refVal').textContent=this.value+'sn'">
-          <span class="setting-val" id="refVal">3sn</span>
-        </div>
-      </div>
-
-      <div class="settings-actions">
-        <button class="btn btn-green" style="font-size:.85em">Kaydet</button>
-        <button class="btn btn-gray" style="font-size:.85em">Varsayılana Dön</button>
-      </div>
-    </div>
-
-    <!-- ── API Info ── -->
-    <div class="api-box">
-      <h2><span class="h2-icon">🔌</span> Geliştirici API Uç Noktaları</h2>
-
-      <p class="desc">Anlık sensör verileri (JSON):</p>
-      <code>GET https://kmt-bitirme1.onrender.com/api</code>
-
-      <p class="desc">Örnek yanıt:</p>
-      <code>{
-  "humidity": 28.4,
-  "temperature": 31.2,
-  "pump": true,
-  "pumpManual": false,
-  "online": true,
-  "history": [...]
-}</code>
-
-      <p class="desc">Pompa kontrolü:</p>
-      <code>POST https://kmt-bitirme1.onrender.com/command
-Body: {"command": "on" | "off" | "auto"}</code>
-    </div>
-
-    <!-- ── Developer Note ── -->
-    <div class="note-box">
-      <strong>Geliştirici Notu:</strong> Bu panel Render üzerinde çalışan backend'den veri çeker.
-      ESP32 kapalıyken <code>online: false</code> gelir. Eşik ayarları şu an yalnızca görseldir;
-      backend'de <code>/settings</code> endpoint'i eklenirse işlevsel hale gelir.
-    </div>
-
-    <footer>
-      Akıllı Tarım Sistemi · ESP32 + DHT22 · Canlı Panel v2.0
-    </footer>
-
-  </div>
-
-  <!-- ══════════════════════════════════════════════════════════
-       LIVE DATA CONNECTION
-       ══════════════════════════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════
+       JAVASCRIPT
+       ═══════════════════════════════════════════════════ -->
   <script>
-    const BACKEND_URL = "https://kmt-bitirme1.onrender.com";
-    const POLL_MS = 3000;            // ms between polls
-    const TEMP_THRESHOLD = 30;       // °C informational
-    const HUM_THRESHOLD  = 60;       // %
+    const BACKEND = "https://kmt-bitirme1.onrender.com";
+    const POLL_MS = 3000;
+    const GAUGE_ARC = 329.87; // 270° arc length for r=70
+    const HUM_THRESHOLD = 60;
+    const TEMP_THRESHOLD = 30;
 
-    const $ = (id) => document.getElementById(id);
+    const $ = id => document.getElementById(id);
 
-    // ── Toast Notification ──────────────────────────────────
-    function showToast(msg, type = 'success') {
+    // ── State ────────────────────────────────────────────
+    let prevValues = { humidity: null, temperature: null, greenLed: null };
+    let decisionLog = [];
+    let lastLoggedLabel = null;
+    let backendReached = false;
+
+    // ── Sidebar Toggle ───────────────────────────────────
+    $('menuBtn').addEventListener('click', () => {
+      $('sidebar').classList.toggle('open');
+      $('sidebarOverlay').classList.toggle('show');
+    });
+    $('sidebarOverlay').addEventListener('click', () => {
+      $('sidebar').classList.remove('open');
+      $('sidebarOverlay').classList.remove('show');
+    });
+
+    // ── Toast ────────────────────────────────────────────
+    function toast(msg, type = 'ok') {
       const t = $('toast');
       t.textContent = msg;
       t.className = 'toast ' + type + ' show';
-      setTimeout(() => { t.className = 'toast'; }, 3000);
+      setTimeout(() => t.className = 'toast', 3000);
     }
 
-    // ── Connection status ───────────────────────────────────
-    function setConn(online) {
-      const dot = $("dotConn");
-      dot.className = "dot" + (online ? "" : " red");
-      $("connText").textContent = online ? "Backend bağlı" : "Bağlantı yok";
-      const banner = $("offlineBanner");
-      if (online) {
-        banner.classList.remove("show");
-      } else {
-        banner.classList.add("show");
+    // ── Gauge Update ─────────────────────────────────────
+    function setGauge(fillEl, fraction) {
+      const clamped = Math.max(0, Math.min(1, fraction));
+      fillEl.style.strokeDashoffset = GAUGE_ARC * (1 - clamped);
+    }
+
+    function setGaugeColor(fillEl, color) {
+      fillEl.classList.remove('amber', 'red');
+      if (color === 'amber') fillEl.classList.add('amber');
+      else if (color === 'red') fillEl.classList.add('red');
+    }
+
+    // ── Animated Number ──────────────────────────────────
+    function animateNum(el, target, decimals = 1, suffix = '') {
+      const current = parseFloat(el.textContent) || 0;
+      if (el.textContent === '—' || Math.abs(current - target) < 0.05) {
+        el.textContent = target.toFixed(decimals) + suffix;
+        return;
       }
+      const diff = target - current;
+      const start = performance.now();
+      const dur = 500;
+      function step(now) {
+        const t = Math.min((now - start) / dur, 1);
+        const ease = 1 - Math.pow(1 - t, 3);
+        el.textContent = (current + diff * ease).toFixed(decimals) + suffix;
+        if (t < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
     }
 
+    // ── Badge helper ─────────────────────────────────────
+    function setBadge(el, isOk, okText = 'AKTİF', errText = 'YOK') {
+      el.textContent = isOk ? okText : errText;
+      el.className = 'sys-badge ' + (isOk ? 'ok' : 'err');
+    }
+
+    function setStatus(el, cls, text) {
+      el.textContent = text;
+      el.className = 'gauge-status ' + cls;
+    }
+
+    // ── Time Ago ─────────────────────────────────────────
     function timeAgo(iso) {
-      if (!iso) return "—";
+      if (!iso) return '—';
       const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-      if (s < 2) return "az önce";
-      if (s < 60) return s + " sn önce";
-      return Math.round(s / 60) + " dk önce";
+      if (s < 2) return 'az önce';
+      if (s < 60) return s + ' sn önce';
+      return Math.round(s / 60) + ' dk önce';
     }
 
-    // ── Render cards ────────────────────────────────────────
+    function clockStr(date) {
+      return date.getHours().toString().padStart(2, '0') + ':' +
+             date.getMinutes().toString().padStart(2, '0');
+    }
+
+    // ── Render ───────────────────────────────────────────
     function render(d) {
-      const valid = typeof d.humidity === "number" && typeof d.temperature === "number";
+      const valid = typeof d.humidity === 'number' && typeof d.temperature === 'number';
+      const hasPress = typeof d.pressure === 'number';
 
-      // Humidity
-      $("humValue").textContent = valid ? d.humidity.toFixed(1) + "%" : "---";
-      $("cardHum").className = "card " + (valid && d.humidity > HUM_THRESHOLD ? "ok" : "warn");
-      $("humHint").textContent = "Eşik: %" + HUM_THRESHOLD + (d.pump ? " — Pompa aktif" : "");
+      // ─ Top bar ─
+      $('connDot').className = 'topbar-dot on';
+      $('connLabel').textContent = 'Backend bağlı';
+      $('espLabel').textContent = d.online ? 'ESP32 aktif' : 'ESP32 çevrimdışı';
+      $('updateLabel').textContent = 'Son: ' + timeAgo(d.updatedAt);
 
-      // Temperature
-      $("tempValue").textContent = valid ? d.temperature.toFixed(1) + "°C" : "---";
-      $("cardTemp").className = "card " + (valid && d.temperature > TEMP_THRESHOLD ? "warn" : "ok");
-      $("tempHint").textContent = "Eşik: " + TEMP_THRESHOLD + "°C" + (d.greenLed ? " — LED yanıyor" : "");
+      // ─ Sidebar ─
+      const dot = $('deviceDot');
+      dot.className = 'device-dot ' + (d.online ? 'online' : 'offline');
+      $('deviceStatusText').textContent = d.online
+        ? (valid ? 'Veri akışı aktif' : 'Sensör okunamıyor')
+        : 'Çevrimdışı';
 
-      // Green LED
-      $("ledVal").textContent = d.greenLed ? "YANIYOR" : "KAPALI";
-      $("cardLed").className = "card " + (d.greenLed ? "ok" : "");
+      setBadge($('sysEsp'), d.online);
+      setBadge($('sysBackend'), true);
+      setBadge($('sysAlgo'), d.algoOnline, 'AKTİF', 'KAPALI');
+      setBadge($('sysMode'), true, d.autoMode ? 'OTO' : 'MANUEL', 'MANUEL');
+      $('sysMode').className = 'sys-badge ' + (d.autoMode ? 'ok' : 'wait');
+      setBadge($('sysDht'), valid);
+      setBadge($('sysBmp'), hasPress, 'AKTİF', 'YOK');
 
-      // Pump
-      $("pumpVal").textContent = d.pump ? "AÇIK" : "KAPALI";
-      $("cardPump").className = "card " + (d.pump ? "pump-on" : "");
-      $("pumpHint").textContent = d.pumpManual ? "Manuel mod" : "Otomatik mod";
+      // ─ Nem gauge ─
+      if (valid) {
+        setGauge($('nemFill'), d.humidity / 100);
+        animateNum($('nemVal'), d.humidity);
+        const nemOk = d.humidity > HUM_THRESHOLD;
+        setGaugeColor($('nemFill'), nemOk ? null : 'red');
+        setStatus($('nemStatus'), nemOk ? 'ok' : 'bad', nemOk ? 'Normal' : 'Düşük');
+      } else {
+        $('nemVal').textContent = '—';
+        setStatus($('nemStatus'), 'wait', 'Veri yok');
+      }
 
-      // Status bar
-      $("dotSensor").className = "dot" + (valid ? "" : " red");
-      $("sensorText").textContent = valid ? "DHT22 Aktif" : "DHT22 okunamıyor";
-      $("dotPump").className = "dot" + (d.pump ? " yellow" : "");
-      $("pumpModeText").textContent = "Pompa " + (d.pumpManual ? "Manuel" : "Otomatik");
-      $("updateText").textContent = "Son güncelleme: " + timeAgo(d.updatedAt);
-      $("dotUpdate").className = "dot" + (d.online ? "" : " red");
+      // ─ Sıcaklık gauge ─
+      if (valid) {
+        setGauge($('tempFill'), d.temperature / 50);
+        animateNum($('tempVal'), d.temperature);
+        const tempHigh = d.temperature > TEMP_THRESHOLD;
+        setGaugeColor($('tempFill'), tempHigh ? 'amber' : null);
+        setStatus($('tempStatus'), tempHigh ? 'warn' : 'ok', tempHigh ? 'Yüksek' : 'Normal');
+      } else {
+        $('tempVal').textContent = '—';
+        setStatus($('tempStatus'), 'wait', 'Veri yok');
+      }
 
-      // Highlight active pump mode button
-      $("btnOn").classList.toggle("active-cmd", d.pump && d.pumpManual);
-      $("btnOff").classList.toggle("active-cmd", !d.pump && d.pumpManual);
-      $("btnAuto").classList.toggle("active-cmd", !d.pumpManual);
+      // ─ Yeşil LED (Lamba) card ─
+      const ledActive = d.greenLed === true;
+      const ledRing = $('ledRing');
+      ledRing.className = 'led-ring' + (ledActive ? ' active' : '');
+      $('ledVal').textContent = ledActive ? 'YANIYOR' : 'KAPALI';
+      $('ledVal').style.color = ledActive ? 'var(--green)' : 'var(--text-2)';
+      setStatus($('ledStatus'), ledActive ? 'ok' : 'wait', ledActive ? 'Aktif' : 'Kapalı');
 
+      // ─ Pompa card ─
+      const ring = $('pumpRing');
+      ring.className = 'pump-ring' + (d.pump ? ' active' : '');
+      $('pumpVal').textContent = d.pump ? 'AÇIK' : 'KAPALI';
+      $('pumpVal').style.color = d.pump ? 'var(--amber)' : 'var(--text-2)';
+      $('pumpMode').textContent = d.pumpManual ? 'Manuel kontrol' : 'Otomatik mod';
+      setStatus($('pumpStatus'), d.pump ? 'warn' : 'ok', d.pump ? 'Çalışıyor' : 'Beklemede');
+
+      // ─ Control buttons ─
+      $('btnOn').className = 'ctrl-btn pump-on-btn' + (d.pump && d.pumpManual ? ' active' : '');
+      $('btnOff').className = 'ctrl-btn pump-off-btn' + (!d.pump && d.pumpManual ? ' active' : '');
+      $('btnAuto').className = 'ctrl-btn pump-auto-btn' + (d.autoMode ? ' active' : '');
+
+      // ─ Algorithm decision ─
       renderDecision(d);
 
+      // ─ Decision log ─
+      updateLog(d);
+
+      // ─ Chart ─
       if (Array.isArray(d.history)) drawChart(d.history);
     }
 
-    // ── Algoritma karar paneli ──────────────────────────────
+    // ── Algorithm Panel ──────────────────────────────────
     function renderDecision(d) {
-      const num = (v) => typeof v === "number";
       const algoOn = d.algoOnline === true;
+      const label = d.decisionLabel;
 
-      // Karar
-      const label = d.decisionLabel; // "ON" | "OFF" | null
-      $("decisionVal").textContent =
-        !algoOn ? "ALGO YOK" : (label === "ON" ? "SULA" : label === "OFF" ? "BEKLE" : "—");
-      $("cardDecision").className =
-        "card " + (!algoOn ? "warn" : label === "ON" ? "pump-on" : "ok");
-      $("decisionHint").textContent =
-        d.autoMode ? "Otomatik mod" : "Manuel mod (algoritma beklemede)";
+      // Badge
+      const badge = $('decBadge');
+      if (!algoOn) {
+        badge.textContent = 'ALGO YOK';
+        badge.className = 'decision-badge none';
+      } else if (label === 'ON') {
+        badge.textContent = 'SULA';
+        badge.className = 'decision-badge sula';
+      } else {
+        badge.textContent = 'BEKLE';
+        badge.className = 'decision-badge bekle';
+      }
 
-      // ON olasiligi
-      $("probVal").textContent = num(d.onProbability)
-        ? d.onProbability.toFixed(2)
-        : "—";
+      // Panel border
+      const panel = $('decisionPanel');
+      panel.className = 'decision-panel' + (label === 'ON' ? ' on' : ' off');
 
-      // Pompa suresi
-      $("durationVal").textContent = num(d.pumpDurationSeconds)
-        ? d.pumpDurationSeconds.toFixed(1) + "sn"
-        : "—";
-
-      // Nem acigi
-      $("deficitVal").textContent = num(d.moistureDeficit)
+      // Metrics
+      $('probVal').textContent = typeof d.onProbability === 'number'
+        ? d.onProbability.toFixed(3)
+        : '—';
+      $('durVal').textContent = typeof d.pumpDurationSeconds === 'number'
+        ? d.pumpDurationSeconds.toFixed(1) + 's'
+        : '—';
+      $('defVal').textContent = typeof d.moistureDeficit === 'number'
         ? d.moistureDeficit.toFixed(1)
-        : "—";
+        : '—';
 
-      // Aciklama
-      $("reasonText").textContent = !algoOn
-        ? "Algoritma servisine ulaşılamıyor — pompa failsafe eşik kontrolünde."
-        : (d.decisionReason || "Algoritma kararı bekleniyor…");
+      // Reason
+      const box = $('reasonBox');
+      box.textContent = !algoOn
+        ? 'Algoritma servisine ulaşılamıyor — failsafe eşik kontrolü aktif.'
+        : (d.decisionReason || 'Algoritma kararı bekleniyor…');
+      box.className = 'decision-reason' + (label === 'ON' ? ' on' : ' off');
     }
 
-    // ── Chart.js Setup ──────────────────────────────────────
+    // ── Decision Log ─────────────────────────────────────
+    function updateLog(d) {
+      const label = d.decisionLabel;
+      if (!label) return;
+
+      // Only log when decision changes
+      if (label !== lastLoggedLabel) {
+        lastLoggedLabel = label;
+        decisionLog.unshift({
+          time: new Date(),
+          label: label,
+          duration: d.pumpDurationSeconds || 0,
+          prob: d.onProbability
+        });
+        if (decisionLog.length > 8) decisionLog.pop();
+        renderTimeline();
+      }
+    }
+
+    function renderTimeline() {
+      const ul = $('timeline');
+      if (decisionLog.length === 0) {
+        ul.innerHTML = '<li class="tl-empty">Henüz karar kaydı yok</li>';
+        return;
+      }
+      ul.innerHTML = decisionLog.map(e => {
+        const isOn = e.label === 'ON';
+        return `<li class="timeline-item">
+          <span class="tl-dot ${isOn ? 'on' : 'off'}"></span>
+          <span class="tl-time">${clockStr(e.time)}</span>
+          <span class="tl-label ${isOn ? 'on' : 'off'}">${isOn ? 'SULA' : 'BEKLE'}</span>
+          <span class="tl-dur">${isOn ? e.duration.toFixed(1) + 's' : '—'}</span>
+        </li>`;
+      }).join('');
+    }
+
+    // ── Chart.js ─────────────────────────────────────────
     let mainChart = null;
 
     function initChart() {
@@ -982,27 +1270,27 @@ Body: {"command": "on" | "off" | "auto"}</code>
             {
               label: 'Nem (%)',
               data: [],
-              borderColor: '#4ecca3',
-              backgroundColor: 'rgba(78, 204, 163, 0.08)',
-              borderWidth: 2.5,
+              borderColor: '#22C55E',
+              backgroundColor: 'rgba(34,197,94,0.06)',
+              borderWidth: 2,
               pointRadius: 0,
-              pointHoverRadius: 5,
-              pointHoverBackgroundColor: '#4ecca3',
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#22C55E',
               fill: true,
-              tension: 0.4,
+              tension: 0.35,
               yAxisID: 'y',
             },
             {
               label: 'Sıcaklık (°C)',
               data: [],
-              borderColor: '#fbbf24',
-              backgroundColor: 'rgba(251, 191, 36, 0.05)',
+              borderColor: '#F59E0B',
+              backgroundColor: 'rgba(245,158,11,0.04)',
               borderWidth: 2,
               pointRadius: 0,
-              pointHoverRadius: 5,
-              pointHoverBackgroundColor: '#fbbf24',
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#F59E0B',
               fill: true,
-              tension: 0.4,
+              tension: 0.35,
               borderDash: [6, 3],
               yAxisID: 'y1',
             }
@@ -1011,168 +1299,149 @@ Body: {"command": "on" | "off" | "auto"}</code>
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          interaction: {
-            mode: 'index',
-            intersect: false,
-          },
+          interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: {
-              display: true,
               position: 'top',
               align: 'end',
               labels: {
-                color: '#94a3b8',
-                font: { family: 'Inter', size: 11, weight: '500' },
+                color: '#7A9B8A',
+                font: { family: 'Space Grotesk', size: 11, weight: '500' },
                 boxWidth: 12,
                 boxHeight: 2,
                 padding: 16,
-                usePointStyle: false,
               }
             },
             tooltip: {
-              backgroundColor: 'rgba(17, 24, 39, 0.95)',
-              titleColor: '#f1f5f9',
-              bodyColor: '#94a3b8',
-              borderColor: 'rgba(78, 204, 163, 0.2)',
+              backgroundColor: 'rgba(16,30,22,0.95)',
+              titleColor: '#D4E7DC',
+              bodyColor: '#7A9B8A',
+              borderColor: 'rgba(34,197,94,0.15)',
               borderWidth: 1,
-              padding: 12,
-              cornerRadius: 8,
-              titleFont: { family: 'Inter', weight: '600' },
-              bodyFont: { family: 'Inter' },
-              displayColors: true,
+              padding: 10,
+              cornerRadius: 6,
+              titleFont: { family: 'Space Grotesk', weight: '600' },
+              bodyFont: { family: 'Space Grotesk' },
             }
           },
           scales: {
             x: {
-              grid: {
-                color: 'rgba(255, 255, 255, 0.04)',
-                drawBorder: false,
-              },
+              grid: { color: 'rgba(34,197,94,0.04)', drawBorder: false },
               ticks: {
-                color: '#64748b',
-                font: { family: 'Inter', size: 10 },
+                color: '#4A6B57',
+                font: { family: 'Space Grotesk', size: 10 },
                 maxTicksLimit: 10,
                 maxRotation: 0,
               }
             },
             y: {
               position: 'left',
-              min: 0,
-              max: 100,
-              grid: {
-                color: 'rgba(255, 255, 255, 0.04)',
-                drawBorder: false,
-              },
+              min: 0, max: 100,
+              grid: { color: 'rgba(34,197,94,0.04)', drawBorder: false },
               ticks: {
-                color: '#4ecca3',
-                font: { family: 'Inter', size: 10, weight: '500' },
+                color: '#22C55E',
+                font: { family: 'Space Grotesk', size: 10, weight: '500' },
                 callback: v => v + '%',
               },
               title: {
                 display: true,
                 text: 'Nem',
-                color: '#4ecca3',
-                font: { family: 'Inter', size: 11, weight: '600' },
+                color: '#22C55E',
+                font: { family: 'Space Grotesk', size: 11, weight: '600' },
               }
             },
             y1: {
               position: 'right',
-              min: 0,
-              max: 50,
+              min: 0, max: 50,
               grid: { display: false },
               ticks: {
-                color: '#fbbf24',
-                font: { family: 'Inter', size: 10, weight: '500' },
-                callback: v => v + '°C',
+                color: '#F59E0B',
+                font: { family: 'Space Grotesk', size: 10, weight: '500' },
+                callback: v => v + '°',
               },
               title: {
                 display: true,
                 text: 'Sıcaklık',
-                color: '#fbbf24',
-                font: { family: 'Inter', size: 11, weight: '600' },
+                color: '#F59E0B',
+                font: { family: 'Space Grotesk', size: 11, weight: '600' },
               }
             }
           },
-          animation: {
-            duration: 600,
-            easing: 'easeInOutQuart',
-          }
+          animation: { duration: 500, easing: 'easeInOutQuart' }
         }
       });
 
-      // Add threshold annotation line (manual drawing)
-      const thresholdPlugin = {
-        id: 'humThreshold',
+      // Threshold line plugin
+      Chart.register({
+        id: 'humThreshLine',
         afterDraw(chart) {
           const yScale = chart.scales.y;
           const ctx = chart.ctx;
-          const yVal = yScale.getPixelForValue(HUM_THRESHOLD);
+          const yPos = yScale.getPixelForValue(HUM_THRESHOLD);
           ctx.save();
-          ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
+          ctx.strokeStyle = 'rgba(239,68,68,0.35)';
           ctx.lineWidth = 1;
-          ctx.setLineDash([6, 4]);
+          ctx.setLineDash([5, 4]);
           ctx.beginPath();
-          ctx.moveTo(chart.chartArea.left, yVal);
-          ctx.lineTo(chart.chartArea.right, yVal);
+          ctx.moveTo(chart.chartArea.left, yPos);
+          ctx.lineTo(chart.chartArea.right, yPos);
           ctx.stroke();
-          ctx.fillStyle = 'rgba(255, 107, 107, 0.7)';
-          ctx.font = '10px Inter';
-          ctx.fillText('Eşik %' + HUM_THRESHOLD, chart.chartArea.left + 4, yVal - 5);
+          ctx.fillStyle = 'rgba(239,68,68,0.6)';
+          ctx.font = '500 10px Space Grotesk';
+          ctx.fillText('Eşik %' + HUM_THRESHOLD, chart.chartArea.left + 4, yPos - 5);
           ctx.restore();
         }
-      };
-
-      Chart.register(thresholdPlugin);
+      });
     }
 
-    // ── Update Chart Data ───────────────────────────────────
     function drawChart(history) {
       if (!mainChart || history.length < 2) return;
-
       const labels = history.map(p => {
         const d = new Date(p.t);
         return d.getHours().toString().padStart(2, '0') + ':' +
                d.getMinutes().toString().padStart(2, '0');
       });
-
       mainChart.data.labels = labels;
       mainChart.data.datasets[0].data = history.map(p => p.humidity);
       mainChart.data.datasets[1].data = history.map(p => p.temperature);
-      mainChart.update('none'); // skip animation on data update for smoothness
+      mainChart.update('none');
     }
 
-    // ── Poll Data ───────────────────────────────────────────
+    // ── Poll ─────────────────────────────────────────────
     async function poll() {
       try {
-        const r = await fetch(BACKEND_URL + "/api", { cache: "no-store" });
+        const r = await fetch(BACKEND + '/api', { cache: 'no-store' });
         if (!r.ok) throw new Error(r.status);
         const d = await r.json();
-        setConn(true);
+        backendReached = true;
         render(d);
-      } catch (e) {
-        setConn(false);
+      } catch {
+        $('connDot').className = 'topbar-dot off';
+        $('connLabel').textContent = backendReached ? 'Bağlantı kesildi' : 'Backend uyanıyor…';
+        setBadge($('sysBackend'), false, 'AKTİF', backendReached ? 'HATA' : 'UYKU');
       }
     }
 
-    // ── Send Command ────────────────────────────────────────
+    // ── Command ──────────────────────────────────────────
     async function sendCommand(cmd) {
       try {
-        const r = await fetch(BACKEND_URL + "/command", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        const r = await fetch(BACKEND + '/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ command: cmd }),
         });
         if (r.ok) {
-          const labels = { on: 'Pompa açıldı', off: 'Pompa kapatıldı', auto: 'Otomatik moda geçildi' };
-          showToast(labels[cmd] || 'Komut gönderildi', 'success');
+          const msgs = { on: 'Pompa açıldı', off: 'Pompa kapatıldı', auto: 'Otomatik moda geçildi' };
+          toast(msgs[cmd] || 'Komut gönderildi');
         }
-        setTimeout(poll, 500);
-      } catch (e) {
-        showToast("Komut gönderilemedi — backend'e ulaşılamıyor.", 'error');
+        setTimeout(poll, 400);
+      } catch {
+        toast('Komut gönderilemedi', 'err');
       }
     }
 
-    // ── Init ────────────────────────────────────────────────
+    // ── Init ─────────────────────────────────────────────
+    lucide.createIcons();
     initChart();
     poll();
     setInterval(poll, POLL_MS);
