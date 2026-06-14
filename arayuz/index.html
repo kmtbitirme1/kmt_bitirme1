@@ -711,6 +711,40 @@
 
     </div>
 
+    <!-- ── Algoritma Karar Paneli ── -->
+    <div class="glass-panel" id="decisionPanel">
+      <h2><span class="h2-icon">🧠</span> Sulama Algoritması Kararı</h2>
+      <div class="grid" style="margin-bottom:0">
+        <div class="card" id="cardDecision">
+          <div class="icon">🚦</div>
+          <div class="label">Karar</div>
+          <div class="value" id="decisionVal" style="font-size:1.4em">—</div>
+          <div class="hint" id="decisionHint">Otomatik mod</div>
+        </div>
+        <div class="card" id="cardProb">
+          <div class="icon">📊</div>
+          <div class="label">ON Olasılığı</div>
+          <div class="value" id="probVal">—</div>
+          <div class="hint" id="probHint">Eşik: 0.40</div>
+        </div>
+        <div class="card" id="cardDuration">
+          <div class="icon">⏱️</div>
+          <div class="label">Pompa Süresi</div>
+          <div class="value" id="durationVal">—</div>
+          <div class="hint">algoritma önerisi</div>
+        </div>
+        <div class="card" id="cardDeficit">
+          <div class="icon">🪴</div>
+          <div class="label">Nem Açığı</div>
+          <div class="value" id="deficitVal">—</div>
+          <div class="hint">hedef: %55</div>
+        </div>
+      </div>
+      <div class="note-box" id="reasonBox" style="margin-top:18px;margin-bottom:0">
+        <strong>Açıklama:</strong> <span id="reasonText">Algoritma kararı bekleniyor…</span>
+      </div>
+    </div>
+
     <!-- ── Controls ── -->
     <div class="glass-panel controls">
       <h2><span class="h2-icon">⚙️</span> Pompa Kontrolü</h2>
@@ -895,7 +929,44 @@ Body: {"command": "on" | "off" | "auto"}</code>
       $("btnOff").classList.toggle("active-cmd", !d.pump && d.pumpManual);
       $("btnAuto").classList.toggle("active-cmd", !d.pumpManual);
 
+      renderDecision(d);
+
       if (Array.isArray(d.history)) drawChart(d.history);
+    }
+
+    // ── Algoritma karar paneli ──────────────────────────────
+    function renderDecision(d) {
+      const num = (v) => typeof v === "number";
+      const algoOn = d.algoOnline === true;
+
+      // Karar
+      const label = d.decisionLabel; // "ON" | "OFF" | null
+      $("decisionVal").textContent =
+        !algoOn ? "ALGO YOK" : (label === "ON" ? "SULA" : label === "OFF" ? "BEKLE" : "—");
+      $("cardDecision").className =
+        "card " + (!algoOn ? "warn" : label === "ON" ? "pump-on" : "ok");
+      $("decisionHint").textContent =
+        d.autoMode ? "Otomatik mod" : "Manuel mod (algoritma beklemede)";
+
+      // ON olasiligi
+      $("probVal").textContent = num(d.onProbability)
+        ? d.onProbability.toFixed(2)
+        : "—";
+
+      // Pompa suresi
+      $("durationVal").textContent = num(d.pumpDurationSeconds)
+        ? d.pumpDurationSeconds.toFixed(1) + "sn"
+        : "—";
+
+      // Nem acigi
+      $("deficitVal").textContent = num(d.moistureDeficit)
+        ? d.moistureDeficit.toFixed(1)
+        : "—";
+
+      // Aciklama
+      $("reasonText").textContent = !algoOn
+        ? "Algoritma servisine ulaşılamıyor — pompa failsafe eşik kontrolünde."
+        : (d.decisionReason || "Algoritma kararı bekleniyor…");
     }
 
     // ── Chart.js Setup ──────────────────────────────────────

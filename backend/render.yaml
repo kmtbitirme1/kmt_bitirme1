@@ -1,5 +1,10 @@
 # Render Blueprint — bir tiklamayla deploy.
 # Render Dashboard > New > Blueprint > bu repoyu sec.
+#
+# Iki servis:
+#   1) akilli-tarim-backend   (Node)   — ESP32 + frontend ile konusur
+#   2) akilli-tarim-algo      (Python) — sulama algoritmasi (Flask)
+# Node servis, ALGO_URL ile Python servise istek atar.
 services:
   - type: web
     name: akilli-tarim-backend
@@ -11,3 +16,20 @@ services:
     envVars:
       - key: INGEST_TOKEN
         generateValue: true   # Render rastgele bir token uretir; ESP32'ye ayni degeri yaz
+      - key: ALGO_URL
+        fromService:
+          name: akilli-tarim-algo
+          type: web
+          property: hostport   # https://<algo-servis>.onrender.com olarak gelir
+
+  - type: web
+    name: akilli-tarim-algo
+    runtime: python
+    plan: free
+    rootDir: backend/algo_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      # Algoritma dosyasi repo kökünde; rootDir'den iki ust + paket klasoru.
+      - key: ALGO_DIR
+        value: /opt/render/project/src/final_irrigation_standalone_package_v4

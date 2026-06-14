@@ -44,12 +44,38 @@ bool  bmpValid    = false;
 bool  pumpActive  = false;
 bool  pumpManual  = false;
 
+// Backend (Python algoritma) ile en az bir kez konusuldu mu?
+// Konusulmadiysa asagidaki yerel esik kontrolu failsafe olarak devrede kalir.
+bool  algoCommandSeen = false;
+
+// Sureli pompa: algoritma "su kadar saniye sula" der (pump_duration_seconds).
+// pumpUntil != 0 ise pompa o ana kadar acik kalir, sonra otomatik kapanir.
+unsigned long pumpUntil = 0;
+
 unsigned long lastRead = 0;
 const unsigned long READ_INTERVAL = 3000; // 3 sn: sensor + backend
 
+// ── Sureli pompayi kontrol et (sure dolduysa kapat) ───────────
+// loop icinde sik cagrilir; 1-8 sn'lik algoritma surelerini hassas uygular.
+void serviceTimedPump() {
+    if (pumpActive && pumpUntil != 0 && millis() >= pumpUntil) {
+        pumpActive = false;
+        pumpUntil  = 0;
+        digitalWrite(RELAY_PIN, LOW);
+        Serial.println("[POMPA] sure doldu, kapatildi");
+    }
+}
+
 // ── MOSFET (IRLZ44N) kontrolu ─────────────────────────────────
 void controlRelay() {
-    if (pumpManual) return;
+    serviceTimedPump();
+
+    // Manuel mod VEYA sureli (algoritma) sulama devam ediyorsa karisma.
+    if (pumpManual || pumpUntil != 0) return;
+
+    // Otomatik modda backend komutu geldiyse karari algoritmaya birak.
+    // Hic backend komutu gelmediyse yerel esik failsafe devreye girer.
+    if (algoCommandSeen) return;
     pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
 }
@@ -105,14 +131,44 @@ void sendToBackend() {
 
     int code = http.POST(body);
     if (code == 200) {
-        StaticJsonDocument<128> rdoc;
+        StaticJsonDocument<192> rdoc;
         if (deserializeJson(rdoc, http.getString()) == DeserializationError::Ok) {
-            const char* cmd = rdoc["command"]; // "on" | "off" | "auto" | null
+            // command artik bir nesne: { "command": "on", "durationSeconds": 4 }
+            // (eski string bicimine de geriye donuk uyum)
+            JsonVariant node = rdoc["command"];
+            const char* cmd = nullptr;
+            float dur = 0.0f;
+            if (node.is<JsonObject>()) {
+                cmd = node["command"];
+                dur = node["durationSeconds"] | 0.0f;
+            } else if (node.is<const char*>()) {
+                cmd = node.as<const char*>();
+            }
+
             if (cmd != nullptr) {
-                if (strcmp(cmd, "on")   == 0) { pumpManual = true;  pumpActive = true;  digitalWrite(RELAY_PIN, HIGH); }
-                if (strcmp(cmd, "off")  == 0) { pumpManual = true;  pumpActive = false; digitalWrite(RELAY_PIN, LOW);  }
-                if (strcmp(cmd, "auto") == 0) { pumpManual = false; }
-                Serial.printf("[CLOUD] Komut: %s\n", cmd);
+                algoCommandSeen = true; // backend ile iletisim kuruldu
+
+                if (strcmp(cmd, "on") == 0) {
+                    pumpActive = true;
+                    digitalWrite(RELAY_PIN, HIGH);
+                    if (dur > 0) {
+                        // Algoritma sureli sulama: manuel moda gecirme.
+                        pumpUntil = millis() + (unsigned long)(dur * 1000.0);
+                    } else {
+                        // Sure yok -> manuel sinirsiz ON.
+                        pumpManual = true;
+                        pumpUntil  = 0;
+                    }
+                } else if (strcmp(cmd, "off") == 0) {
+                    pumpActive = false;
+                    pumpUntil  = 0;
+                    digitalWrite(RELAY_PIN, LOW);
+                    if (dur == 0) pumpManual = true; // manuel OFF; sureli OFF'ta otomatik kalir
+                } else if (strcmp(cmd, "auto") == 0) {
+                    pumpManual = false;
+                    pumpUntil  = 0;
+                }
+                Serial.printf("[CLOUD] Komut: %s (%.2f sn)\n", cmd, dur);
             }
         }
     } else if (code < 0) {
@@ -394,6 +450,7 @@ void handleSave() {
 void handlePumpOn() {
     pumpManual = true;
     pumpActive = true;
+    pumpUntil  = 0;                // manuel override -> varsa sureli isi iptal et
     digitalWrite(RELAY_PIN, HIGH); // Röleyi tetikle
     server.sendHeader("Location", "/");
     server.send(302);
@@ -403,14 +460,16 @@ void handlePumpOn() {
 void handlePumpOff() {
     pumpManual = true;
     pumpActive = false;
+    pumpUntil  = 0;                // sureli isi iptal et
     digitalWrite(RELAY_PIN, LOW);  // Röleyi bırak
     server.sendHeader("Location", "/");
     server.send(302);
 }
 
-// GET /pump/auto → Otomatik moda dön (nem eşiğine göre karar verir)
+// GET /pump/auto → Otomatik moda dön (algoritma / esik karari)
 void handlePumpAuto() {
     pumpManual = false;
+    pumpUntil  = 0;
     server.sendHeader("Location", "/");
     server.send(302);
 }
@@ -489,6 +548,7 @@ void setup() {
 // ── Loop ──────────────────────────────────────────────────────
 void loop() {
     server.handleClient(); // Yerel web isteklerini isle
+    serviceTimedPump();    // sureli sulama kapanisini her dongude kontrol et
 
     if (millis() - lastRead >= READ_INTERVAL) {
         lastRead = millis();

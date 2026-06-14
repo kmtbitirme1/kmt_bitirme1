@@ -1,3 +1,5 @@
 node_modules/
 .env
 npm-debug.log
+algorithm_log.csv
+__pycache__/

@@ -1,0 +1,5 @@
+flask>=3.0
+gunicorn>=21.0
+# Performans değerlendirme için (evaluate_algorithm_performance.py):
+pandas>=2.0
+scikit-learn>=1.3
