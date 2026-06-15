@@ -778,6 +778,101 @@
       .pump-card .pump-ring i { width: 22px; height: 22px; }
       .chart-container { height: 180px; }
     }
+
+    /* ── Settings Modal ────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 100;
+      opacity: 0;
+      transition: opacity 0.3s var(--ease);
+    }
+    .modal-overlay.show {
+      display: block;
+      opacity: 1;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -45%);
+      width: 90%;
+      max-width: 400px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      z-index: 101;
+      opacity: 0;
+      transition: all 0.3s var(--ease);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .modal.show {
+      display: flex;
+      flex-direction: column;
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-header h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-1);
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-3);
+      cursor: pointer;
+      display: flex;
+      transition: color 0.2s;
+    }
+    .modal-close:hover { color: var(--text-1); }
+    .modal-close i { width: 20px; height: 20px; }
+    .modal-body {
+      padding: 20px;
+    }
+    .setting-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .setting-row label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+    .setting-row input {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .setting-row input:focus {
+      border-color: var(--green);
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+    }
   </style>
 </head>
 <body>
@@ -871,6 +966,9 @@
           <i data-lucide="clock"></i>
           <span id="updateLabel">Son güncelleme: —</span>
         </div>
+        <button class="menu-btn" style="display:flex; position:static; border-color:var(--border-active);" id="settingsBtn" aria-label="Ayarlar">
+          <i data-lucide="settings"></i>
+        </button>
       </div>
     </div>
 
@@ -1007,6 +1105,33 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsOverlay"></div>
+  <div class="modal" id="settingsModal">
+    <div class="modal-header">
+      <h3>Sistem Ayarları</h3>
+      <button class="modal-close" id="closeSettingsBtn"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="setting-row">
+        <label>Nem Eşiği (%)</label>
+        <input type="number" id="inpHumThresh" min="10" max="90" step="1" value="60">
+      </div>
+      <div class="setting-row">
+        <label>Sıcaklık Eşiği (°C)</label>
+        <input type="number" id="inpTempThresh" min="10" max="60" step="1" value="30">
+      </div>
+      <p style="font-size:0.7rem; color:var(--text-3); margin-top:8px; line-height:1.5;">
+        Değişiklikler hem yerel donanımı (ESP32) hem de bulut algoritmasını anında günceller.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="ctrl-btn pump-auto-btn active" id="saveSettingsBtn" style="padding:10px 20px; font-size:0.8rem; margin:0;">
+        Ayarları Kaydet
+      </button>
+    </div>
+  </div>
+
   <!-- ═══════════════════════════════════════════════════
        JAVASCRIPT
        ═══════════════════════════════════════════════════ -->
@@ -1014,8 +1139,8 @@
     const BACKEND = "https://kmt-bitirme1.onrender.com";
     const POLL_MS = 3000;
     const GAUGE_ARC = 329.87; // 270° arc length for r=70
-    const HUM_THRESHOLD = 60;
-    const TEMP_THRESHOLD = 30;
+    let HUM_THRESHOLD = 60;
+    let TEMP_THRESHOLD = 30;
 
     const $ = id => document.getElementById(id);
 
@@ -1033,6 +1158,46 @@
     $('sidebarOverlay').addEventListener('click', () => {
       $('sidebar').classList.remove('open');
       $('sidebarOverlay').classList.remove('show');
+    });
+
+    // ── Settings Modal Toggle ────────────────────────────
+    $('settingsBtn').addEventListener('click', () => {
+      $('settingsOverlay').classList.add('show');
+      $('settingsModal').classList.add('show');
+      $('inpHumThresh').value = HUM_THRESHOLD;
+      $('inpTempThresh').value = TEMP_THRESHOLD;
+    });
+    
+    function closeSettings() {
+      $('settingsOverlay').classList.remove('show');
+      $('settingsModal').classList.remove('show');
+    }
+    
+    $('closeSettingsBtn').addEventListener('click', closeSettings);
+    $('settingsOverlay').addEventListener('click', closeSettings);
+
+    $('saveSettingsBtn').addEventListener('click', async () => {
+      const hum = parseFloat($('inpHumThresh').value);
+      const temp = parseFloat($('inpTempThresh').value);
+      if (isNaN(hum) || isNaN(temp)) return toast('Geçersiz değer', 'err');
+      
+      const btn = $('saveSettingsBtn');
+      btn.textContent = 'Kaydediliyor...';
+      try {
+        const r = await fetch(BACKEND + '/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ humThreshold: hum, tempThreshold: temp }),
+        });
+        if (!r.ok) throw new Error();
+        toast('Ayarlar başarıyla kaydedildi', 'ok');
+        closeSettings();
+        poll(); // refresh immediately
+      } catch {
+        toast('Ayarlar kaydedilemedi!', 'err');
+      } finally {
+        btn.textContent = 'Ayarları Kaydet';
+      }
     });
 
     // ── Toast ────────────────────────────────────────────
@@ -1109,6 +1274,13 @@
       $('connLabel').textContent = 'Backend bağlı';
       $('espLabel').textContent = d.online ? 'ESP32 aktif' : 'ESP32 çevrimdışı';
       $('updateLabel').textContent = 'Son: ' + timeAgo(d.updatedAt);
+
+      // ─ Config (Eşik) Guncelleme ─
+      if (d.config) {
+        if (typeof d.config.humThreshold === 'number') HUM_THRESHOLD = d.config.humThreshold;
+        if (typeof d.config.tempThreshold === 'number') TEMP_THRESHOLD = d.config.tempThreshold;
+        if (mainChart) mainChart.update('none'); // Cizgiyi hareket ettir
+      }
 
       // ─ Sidebar ─
       const dot = $('deviceDot');

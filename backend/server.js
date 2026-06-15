@@ -64,6 +64,8 @@ app.use(cors());
 app.use(express.json());
 
 // ── Durum (RAM) ───────────────────────────────────────────────
+let appConfig = { humThreshold: 60, tempThreshold: 30 };
+
 let latest = {
   humidity: null,
   temperature: null,
@@ -126,6 +128,7 @@ async function callAlgorithm(humidity, temperature, pressureHpa) {
     temperature: temperature,
     pressure_kpa: pressureKpa,
     last_irrigation_minutes_ago: minutesSinceLastIrrigation(),
+    config: { target_soil_moisture: appConfig.humThreshold }
   };
 
   const controller = new AbortController();
@@ -252,7 +255,7 @@ app.post("/ingest", async (req, res) => {
     autoCommand = null;
   }
 
-  res.json({ ok: true, command: cmd });
+  res.json({ ok: true, command: cmd, config: appConfig });
 });
 
 // ── Frontend -> backend: anlik durum + gecmis + karar ─────────
@@ -262,6 +265,7 @@ app.get("/api", (_req, res) => {
     online: isOnline(),
     autoMode,
     history,
+    config: appConfig
   });
 });
 
@@ -283,6 +287,14 @@ app.post("/command", (req, res) => {
   }
 
   res.json({ ok: true, queued: command, autoMode });
+});
+
+// ── Frontend -> backend: ayarlari (esikleri) guncelle ─────────
+app.post("/config", (req, res) => {
+  const { humThreshold, tempThreshold } = req.body || {};
+  if (typeof humThreshold === "number") appConfig.humThreshold = humThreshold;
+  if (typeof tempThreshold === "number") appConfig.tempThreshold = tempThreshold;
+  res.json({ ok: true, config: appConfig });
 });
 
 // ── ESP32 -> backend: bekleyen komutu cek ─────────────────────

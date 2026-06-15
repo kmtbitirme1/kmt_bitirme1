@@ -131,8 +131,29 @@ void sendToBackend() {
 
     int code = http.POST(body);
     if (code == 200) {
-        StaticJsonDocument<192> rdoc;
+        StaticJsonDocument<384> rdoc;
         if (deserializeJson(rdoc, http.getString()) == DeserializationError::Ok) {
+            // Eşik ayarlarını (config) çek ve gerekirse NVS'e kaydet
+            JsonVariant cfg = rdoc["config"];
+            if (cfg.is<JsonObject>()) {
+                float newHum = cfg["humThreshold"] | HUMIDITY_THRESHOLD;
+                float newTemp = cfg["tempThreshold"] | TEMP_THRESHOLD;
+                bool changed = false;
+                if (abs(newHum - HUMIDITY_THRESHOLD) > 0.1) {
+                    HUMIDITY_THRESHOLD = newHum;
+                    prefs.putFloat("humThresh", HUMIDITY_THRESHOLD);
+                    changed = true;
+                }
+                if (abs(newTemp - TEMP_THRESHOLD) > 0.1) {
+                    TEMP_THRESHOLD = newTemp;
+                    prefs.putFloat("tmpThresh", TEMP_THRESHOLD);
+                    changed = true;
+                }
+                if (changed) {
+                    Serial.printf("[AYAR] Sunucudan yeni esik alindi: Nem=%.1f, Sicaklik=%.1f\n", HUMIDITY_THRESHOLD, TEMP_THRESHOLD);
+                }
+            }
+
             // command artik bir nesne: { "command": "on", "durationSeconds": 4 }
             // (eski string bicimine de geriye donuk uyum)
             JsonVariant node = rdoc["command"];
