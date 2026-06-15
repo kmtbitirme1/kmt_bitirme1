@@ -167,6 +167,9 @@ void sendToBackend() {
                 } else if (strcmp(cmd, "auto") == 0) {
                     pumpManual = false;
                     pumpUntil  = 0;
+                    // Backend "auto" komutu gelince de hemen esige gore uygula.
+                    pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
+                    digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
                 }
                 Serial.printf("[CLOUD] Komut: %s (%.2f sn)\n", cmd, dur);
             }
@@ -470,6 +473,10 @@ void handlePumpOff() {
 void handlePumpAuto() {
     pumpManual = false;
     pumpUntil  = 0;
+    // Hemen esige gore durumu uygula; bir sonraki backend cevabini bekleme.
+    // Bu olmadan son manuel durumu relay'de kaliyor.
+    pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
+    digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
     server.sendHeader("Location", "/");
     server.send(302);
 }
