@@ -110,71 +110,45 @@ function minutesSinceLastIrrigation() {
   return (Date.now() - lastIrrigationAt) / 60000;
 }
 
-// ── Dahili Algoritma (Python'dan JS'ye cevrilmis) ─────────────
+// ── Algoritma servisini cagir ─────────────────────────────────
 async function callAlgorithm(humidity, temperature, pressureHpa) {
-  const pressureKpa = typeof pressureHpa === "number" ? pressureHpa / 10 : DEFAULT_PRESSURE_KPA;
-  
-  // Model Sabitleri (Python modelinden birebir alindi)
-  const SCALER_MEAN = [45.433090227130656, 22.492227547405708, 58.52105188580954, 101.13141821212753];
-  const SCALER_SCALE = [26.007173042265276, 13.28271661038062, 30.072821403765282, 0.2184434734277875];
-  const MODEL_COEFFICIENTS = [-0.7745651265412601, 0.7426499310497418, -0.015164651317430384, -0.020784588977389953];
-  const MODEL_INTERCEPT = 0.20465532647535664;
-  
-  const DECISION_THRESHOLD = 0.40;
-  const TARGET_SOIL_MOISTURE = 55.0;
-  const SECONDS_PER_MOISTURE_POINT = 0.20;
-  const MIN_PUMP_DURATION = 1.0;
-  const MAX_PUMP_DURATION = 8.0;
+  // soil_moisture donanimda olcumlenemiyor (toprak sensoru yok).
+  // Karar geregi: gecici PROXY olarak hava nemini soil yerine veriyoruz.
+  // Toprak nem sensoru eklenince burayi gercek soil degeriyle degistir.
+  //
+  // Basinc: BMP280 hPa gonderir (~1013). Algoritma kPa (80-120) bekler -> /10.
+  const pressureKpa =
+    typeof pressureHpa === "number" ? pressureHpa / 10 : DEFAULT_PRESSURE_KPA;
 
-  // Girdiler (soil_moisture su an humidity proxy olarak kullaniliyor)
-  const inputs = [humidity, temperature, humidity, pressureKpa];
-
-  // Olasilik Hesaplama (Logistic Regression)
-  let logit = MODEL_INTERCEPT;
-  for (let i = 0; i < 4; i++) {
-    const standardized = (inputs[i] - SCALER_MEAN[i]) / SCALER_SCALE[i];
-    logit += MODEL_COEFFICIENTS[i] * standardized;
-  }
-  const onProbability = 1 / (1 + Math.exp(-logit));
-  const modelSaysOn = onProbability >= DECISION_THRESHOLD;
-
-  // Optimizasyon Hesaplama
-  const moistureDeficit = Math.max(0, TARGET_SOIL_MOISTURE - humidity);
-
-  // Karar Mantigi
-  if (!modelSaysOn) {
-    return {
-      irrigation_required: false,
-      decision_label: "OFF",
-      on_probability: onProbability,
-      pump_duration_seconds: 0.0,
-      moisture_deficit: moistureDeficit,
-      decision_reason: `ON olasiligi ${onProbability.toFixed(3)}, ${DECISION_THRESHOLD} karar esiginin altindadir.`
-    };
-  }
-
-  if (humidity >= TARGET_SOIL_MOISTURE) {
-    return {
-      irrigation_required: false,
-      decision_label: "OFF",
-      on_probability: onProbability,
-      pump_duration_seconds: 0.0,
-      moisture_deficit: 0.0,
-      decision_reason: `Toprak nemi hedef degere (${TARGET_SOIL_MOISTURE}) ulasti.`
-    };
-  }
-
-  let rawDuration = moistureDeficit * SECONDS_PER_MOISTURE_POINT;
-  let pumpDuration = Math.max(MIN_PUMP_DURATION, Math.min(rawDuration, MAX_PUMP_DURATION));
-
-  return {
-    irrigation_required: true,
-    decision_label: "ON",
-    on_probability: onProbability,
-    pump_duration_seconds: parseFloat(pumpDuration.toFixed(2)),
-    moisture_deficit: parseFloat(moistureDeficit.toFixed(2)),
-    decision_reason: `ON olasiligi ${onProbability.toFixed(3)}. Nem acigi ${moistureDeficit.toFixed(2)} -> Pompa ${pumpDuration.toFixed(2)} sn calisacak.`
+  const sensorData = {
+    soil_moisture: humidity,          // PROXY — toprak nem sensoru eklenince degisecek
+    air_humidity_pct: humidity,
+    temperature: temperature,
+    pressure_kpa: pressureKpa,
+    last_irrigation_minutes_ago: minutesSinceLastIrrigation(),
   };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const r = await fetch(`${ALGO_URL}/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sensorData),
+      signal: controller.signal,
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      console.warn(`[ALGO] ${r.status}: ${err.error || "bilinmeyen hata"}`);
+      return null;
+    }
+    return await r.json();
+  } catch (e) {
+    console.warn(`[ALGO] servise ulasilamadi: ${e.message}`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ── Karari CSV log'a yaz (performans degerlendirme icin) ──────
