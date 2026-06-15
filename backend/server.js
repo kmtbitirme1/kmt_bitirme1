@@ -122,12 +122,14 @@ async function callAlgorithm(humidity, temperature, pressureHpa) {
   
   const DECISION_THRESHOLD = 0.40;
   const TARGET_SOIL_MOISTURE = 55.0;
+  const MINIMUM_IRRIGATION_INTERVAL_MINUTES = 30.0;
   const SECONDS_PER_MOISTURE_POINT = 0.20;
   const MIN_PUMP_DURATION = 1.0;
   const MAX_PUMP_DURATION = 8.0;
 
   // Girdiler (soil_moisture su an humidity proxy olarak kullaniliyor)
   const inputs = [humidity, temperature, humidity, pressureKpa];
+  const lastIrrigationMinutesAgo = minutesSinceLastIrrigation();
 
   // Olasilik Hesaplama (Logistic Regression)
   let logit = MODEL_INTERCEPT;
@@ -161,6 +163,17 @@ async function callAlgorithm(humidity, temperature, pressureHpa) {
       pump_duration_seconds: 0.0,
       moisture_deficit: 0.0,
       decision_reason: `Toprak nemi hedef degere (${TARGET_SOIL_MOISTURE}) ulasti.`
+    };
+  }
+
+  if (lastIrrigationMinutesAgo !== null && lastIrrigationMinutesAgo < MINIMUM_IRRIGATION_INTERVAL_MINUTES) {
+    return {
+      irrigation_required: false,
+      decision_label: "OFF",
+      on_probability: onProbability,
+      pump_duration_seconds: 0.0,
+      moisture_deficit: moistureDeficit,
+      decision_reason: `Model ON egilimi gostermistir ancak son sulamadan yalnizca ${lastIrrigationMinutesAgo.toFixed(1)} dakika gecmistir.`
     };
   }
 
