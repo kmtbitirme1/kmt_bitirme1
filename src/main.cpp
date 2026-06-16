@@ -61,7 +61,8 @@ bool  algoCommandSeen = false;
 // pumpUntil != 0 ise pompa o ana kadar acik kalir, sonra otomatik kapanir.
 unsigned long pumpUntil = 0;
 
-unsigned long lastRead = 0;
+unsigned long lastRead        = 0;
+unsigned long lastIrrigated   = 0; // Son sulama zamanı (millis) — backend için
 const unsigned long READ_INTERVAL = 3000; // 3 sn: sensor + backend
 
 // ── Sureli pompayi kontrol et (sure dolduysa kapat) ───────────
@@ -131,18 +132,22 @@ void sendToBackend() {
     http.addHeader("Content-Type", "application/json");
     http.setTimeout(5000);
 
-    StaticJsonDocument<256> doc;
+    StaticJsonDocument<320> doc;
+    doc["soil_moisture"] = soilMoisture;  // algoritma: soil_moisture (%)
     if (dhtValid) {
-        doc["humidity"]    = humidity;
-        doc["temperature"] = temperature;
+        doc["air_humidity_pct"] = humidity;    // algoritma: air_humidity_pct
+        doc["temperature"]      = temperature; // algoritma: temperature (C)
     }
     if (bmpValid) {
-        doc["pressure"] = pressure;
+        doc["pressure_kpa"] = pressure / 10.0F; // hPa → kPa (algoritma kPa bekliyor)
     }
-    doc["soilMoisture"] = soilMoisture;   // toprak nem % — pompa kararini buradan aliyor
-    doc["pump"]         = pumpActive;
-    doc["pumpManual"]   = pumpManual;
-    doc["greenLed"]     = (dhtValid && temperature > TEMP_THRESHOLD);
+    // Son sulamadan kac dakika gecti (algoritma min. aralik kontrolu icin kullanir)
+    if (lastIrrigated > 0) {
+        doc["last_irrigation_minutes_ago"] = (millis() - lastIrrigated) / 60000.0F;
+    }
+    doc["pump"]      = pumpActive;
+    doc["pumpManual"] = pumpManual;
+    doc["greenLed"]  = (dhtValid && temperature > TEMP_THRESHOLD);
 
     String body;
     serializeJson(doc, body);
@@ -189,6 +194,7 @@ void sendToBackend() {
 
                 if (strcmp(cmd, "on") == 0) {
                     pumpActive = true;
+                    lastIrrigated = millis(); // son sulama zamanini kaydet
                     digitalWrite(RELAY_PIN, HIGH);
                     if (dur > 0) {
                         // Algoritma sureli sulama: manuel moda gecirme.
