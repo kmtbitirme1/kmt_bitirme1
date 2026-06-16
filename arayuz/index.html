@@ -1470,8 +1470,14 @@
 
       // ─ Config (Eşik) Guncelleme ─
       if (d.config) {
-        if (typeof d.config.humThreshold === 'number') HUM_THRESHOLD = d.config.humThreshold;
-        if (typeof d.config.tempThreshold === 'number') TEMP_THRESHOLD = d.config.tempThreshold;
+        if (typeof d.config.humThreshold === 'number') {
+          HUM_THRESHOLD = d.config.humThreshold;
+          if ($('inpHumThresh') && document.activeElement !== $('inpHumThresh')) $('inpHumThresh').value = HUM_THRESHOLD;
+        }
+        if (typeof d.config.tempThreshold === 'number') {
+          TEMP_THRESHOLD = d.config.tempThreshold;
+          if ($('inpTempThresh') && document.activeElement !== $('inpTempThresh')) $('inpTempThresh').value = TEMP_THRESHOLD;
+        }
         if (mainChart) mainChart.update('none'); // Cizgiyi hareket ettir
       }
 
