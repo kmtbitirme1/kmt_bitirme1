@@ -576,6 +576,62 @@
     .decision-reason.on { border-left-color: var(--amber); }
     .decision-reason.off { border-left-color: var(--green); }
 
+    /* ── Weather Panel (Basınç) ────────────────────────── */
+    .weather-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    
+    .weather-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    
+    .weather-icon i {
+      width: 32px;
+      height: 32px;
+      color: var(--text-2);
+    }
+    
+    .weather-icon.sunny { background: rgba(245, 158, 11, 0.15); }
+    .weather-icon.sunny i { color: var(--amber); }
+    
+    .weather-icon.cloudy { background: rgba(59, 130, 246, 0.15); }
+    .weather-icon.cloudy i { color: var(--blue); }
+    
+    .weather-icon.rainy { background: rgba(239, 68, 68, 0.15); }
+    .weather-icon.rainy i { color: var(--red); }
+    
+    .weather-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .w-status {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-1);
+    }
+    
+    .w-desc {
+      font-size: 0.85rem;
+      color: var(--text-2);
+      line-height: 1.4;
+    }
+
     /* ── Mid Grid (Controls + Timeline) ───────────────── */
     .mid-grid {
       display: grid;
@@ -1039,6 +1095,27 @@
         </div>
       </div>
 
+      <!-- Basınç Gauge -->
+      <div class="gauge-card" id="cardPress">
+        <div class="gauge-header"><i data-lucide="gauge"></i><span>Basınç</span></div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 200 200" class="gauge-svg">
+            <circle class="gauge-track" cx="100" cy="100" r="70"
+                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+            <circle class="gauge-fill" cx="100" cy="100" r="70" id="pressFill"
+                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
+                    transform="rotate(135 100 100)"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="pressVal">—</span>
+            <div class="gauge-unit" style="font-size:12px; margin-top:2px;">hPa</div>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="gauge-status wait" id="pressStatus">Bekleniyor</span>
+        </div>
+      </div>
+
       <!-- Yeşil LED (Lamba) Card -->
       <div class="gauge-card led-card" id="cardLed">
         <div class="gauge-header"><i data-lucide="lightbulb"></i><span>Yeşil LED (Lamba)</span></div>
@@ -1086,6 +1163,16 @@
         </div>
       </div>
       <div class="decision-reason" id="reasonBox">Algoritma kararı bekleniyor…</div>
+    </div>
+
+    <!-- Weather Prediction Panel -->
+    <div class="section-title"><i data-lucide="cloud-sun"></i> Hava Durumu Tahmini (Barometrik)</div>
+    <div class="weather-panel" id="weatherPanel">
+      <div class="weather-icon" id="weatherIcon"><i data-lucide="cloud"></i></div>
+      <div class="weather-info">
+        <div class="w-status" id="weatherStatus">Bekleniyor...</div>
+        <div class="w-desc" id="weatherDesc">Sistemden yeterli basınç verisi bekleniyor. Algoritma bu tahmine göre sulama kararını optimize edebilir.</div>
+      </div>
     </div>
 
     <!-- Controls + Timeline -->
@@ -1352,6 +1439,42 @@
       } else {
         $('tempVal').textContent = '—';
         setStatus($('tempStatus'), 'wait', 'Veri yok');
+      }
+
+      // ─ Basınç gauge & Hava Durumu Tahmini ─
+      if (hasPress) {
+        // Basınç aralığı genelde 980 - 1050 hPa arasındadır. Gauge'u buna göre map edelim.
+        // Normalize for gauge (980 -> 0, 1050 -> 1)
+        const pressNorm = Math.max(0, Math.min(1, (d.pressure - 980) / 70));
+        setGauge($('pressFill'), pressNorm);
+        animateNum($('pressVal'), d.pressure, 1, '');
+        setStatus($('pressStatus'), 'ok', 'Normal');
+
+        // Hava Tahmini Mantığı
+        const wIcon = $('weatherIcon');
+        const wStat = $('weatherStatus');
+        const wDesc = $('weatherDesc');
+        
+        if (d.pressure >= 1022) {
+          wIcon.className = 'weather-icon sunny';
+          wIcon.innerHTML = '<i data-lucide="sun"></i>';
+          wStat.textContent = 'Güneşli ve Açık';
+          wDesc.textContent = 'Yüksek basınç sistemi. Hava açık ve kuru olacak, buharlaşma artacağı için sulama ihtiyacı olabilir.';
+        } else if (d.pressure < 1009) {
+          wIcon.className = 'weather-icon rainy';
+          wIcon.innerHTML = '<i data-lucide="cloud-rain"></i>';
+          wStat.textContent = 'Yağmurlu / Fırtınalı';
+          wDesc.textContent = 'Alçak basınç sistemi. Yakın zamanda yağış bekleniyor. Algoritma su tasarrufu için pompayı bekletebilir.';
+        } else {
+          wIcon.className = 'weather-icon cloudy';
+          wIcon.innerHTML = '<i data-lucide="cloud"></i>';
+          wStat.textContent = 'Parçalı Bulutlu / Kararlı';
+          wDesc.textContent = 'Normal basınç seviyesi. Hava şartlarında ani bir değişim beklenmiyor.';
+        }
+        lucide.createIcons();
+      } else {
+        $('pressVal').textContent = '—';
+        setStatus($('pressStatus'), 'wait', 'Veri yok');
       }
 
       // ─ Yeşil LED (Lamba) card ─
