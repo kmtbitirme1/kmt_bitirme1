@@ -15,7 +15,7 @@ databases:
 
 services:
   - type: web
-    name: kmt-bitirme1
+    name: kmt_bitirme1
     runtime: node
     plan: free
     rootDir: backend
