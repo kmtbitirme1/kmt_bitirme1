@@ -1036,6 +1036,29 @@
         <span>BMP280</span>
         <span class="sys-badge wait" id="sysBmp">—</span>
       </div>
+      <div class="sys-row">
+        <i data-lucide="droplets"></i>
+        <span>Toprak Nemi</span>
+        <span class="sys-badge wait" id="sysSoil">—</span>
+      </div>
+    </div>
+
+    <div class="sb-section" style="margin-top: 24px;">
+      <div class="sb-label">Otomasyon Eşikleri</div>
+      <div class="setting-row" style="margin-bottom: 12px;">
+        <label>Toprak Nemi Eşiği (%)</label>
+        <input type="number" id="inpHumThresh" min="10" max="90" step="1" value="60" style="margin-top:4px;">
+      </div>
+      <div class="setting-row">
+        <label>Sıcaklık Eşiği (°C)</label>
+        <input type="number" id="inpTempThresh" min="10" max="60" step="1" value="30" style="margin-top:4px;">
+      </div>
+      <p style="font-size:0.7rem; color:var(--text-3); margin-top:12px; line-height:1.4;">
+        Değişiklikler anında ESP32'ye iletilir.
+      </p>
+      <button class="ctrl-btn pump-auto-btn active" id="saveSettingsBtn" style="width: 100%; margin-top: 12px; padding: 10px;">
+        <i data-lucide="save" style="margin-right:6px;"></i> Eşikleri Kaydet
+      </button>
     </div>
 
     <div class="sb-footer">
@@ -1068,9 +1091,6 @@
           <i data-lucide="clock"></i>
           <span id="updateLabel">Son güncelleme: —</span>
         </div>
-        <button class="menu-btn" style="display:flex; position:static; border-color:var(--border-active);" id="settingsBtn" aria-label="Ayarlar">
-          <i data-lucide="settings"></i>
-        </button>
       </div>
     </div>
 
@@ -1271,32 +1291,7 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
-  <!-- Settings Modal -->
-  <div class="modal-overlay" id="settingsOverlay"></div>
-  <div class="modal" id="settingsModal">
-    <div class="modal-header">
-      <h3>Sistem Ayarları</h3>
-      <button class="modal-close" id="closeSettingsBtn"><i data-lucide="x"></i></button>
-    </div>
-    <div class="modal-body">
-      <div class="setting-row">
-        <label>Toprak Nemi Eşiği (%)</label>
-        <input type="number" id="inpHumThresh" min="10" max="90" step="1" value="60">
-      </div>
-      <div class="setting-row">
-        <label>Sıcaklık Eşiği (°C)</label>
-        <input type="number" id="inpTempThresh" min="10" max="60" step="1" value="30">
-      </div>
-      <p style="font-size:0.7rem; color:var(--text-3); margin-top:8px; line-height:1.5;">
-        Değişiklikler hem yerel donanımı (ESP32) hem de bulut algoritmasını anında günceller.
-      </p>
-    </div>
-    <div class="modal-footer">
-      <button class="ctrl-btn pump-auto-btn active" id="saveSettingsBtn" style="padding:10px 20px; font-size:0.8rem; margin:0;">
-        Ayarları Kaydet
-      </button>
-    </div>
-  </div>
+
 
   <!-- ═══════════════════════════════════════════════════
        JAVASCRIPT
@@ -1344,29 +1339,15 @@
       lucide.createIcons(); // refresh icon
     });
 
-    // ── Settings Modal Toggle ────────────────────────────
-    $('settingsBtn').addEventListener('click', () => {
-      $('settingsOverlay').classList.add('show');
-      $('settingsModal').classList.add('show');
-      $('inpHumThresh').value = HUM_THRESHOLD;
-      $('inpTempThresh').value = TEMP_THRESHOLD;
-    });
-    
-    function closeSettings() {
-      $('settingsOverlay').classList.remove('show');
-      $('settingsModal').classList.remove('show');
-    }
-    
-    $('closeSettingsBtn').addEventListener('click', closeSettings);
-    $('settingsOverlay').addEventListener('click', closeSettings);
-
+    // ── Settings Save ────────────────────────────────────
     $('saveSettingsBtn').addEventListener('click', async () => {
       const hum = parseFloat($('inpHumThresh').value);
       const temp = parseFloat($('inpTempThresh').value);
       if (isNaN(hum) || isNaN(temp)) return toast('Geçersiz değer', 'err');
       
       const btn = $('saveSettingsBtn');
-      btn.textContent = 'Kaydediliyor...';
+      btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Kaydediliyor...';
+      lucide.createIcons();
       try {
         const r = await fetch(BACKEND + '/config', {
           method: 'POST',
@@ -1375,12 +1356,12 @@
         });
         if (!r.ok) throw new Error();
         toast('Ayarlar başarıyla kaydedildi', 'ok');
-        closeSettings();
         poll(); // refresh immediately
       } catch {
         toast('Ayarlar kaydedilemedi!', 'err');
       } finally {
-        btn.textContent = 'Ayarları Kaydet';
+        btn.innerHTML = '<i data-lucide="save" style="margin-right:6px;"></i> Eşikleri Kaydet';
+        lucide.createIcons();
       }
     });
 
@@ -1480,6 +1461,7 @@
       $('sysMode').className = 'sys-badge ' + (d.autoMode ? 'ok' : 'wait');
       setBadge($('sysDht'), valid);
       setBadge($('sysBmp'), hasPress, 'AKTİF', 'YOK');
+      setBadge($('sysSoil'), hasSoil, 'AKTİF', 'YOK');
 
       // ─ Toprak Nemi gauge ─
       const hasSoil = typeof d.soilMoisture === 'number';
