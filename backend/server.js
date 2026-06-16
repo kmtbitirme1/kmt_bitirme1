@@ -67,6 +67,7 @@ app.use(express.json());
 let appConfig = { humThreshold: 60, tempThreshold: 30 };
 
 let latest = {
+  soilMoisture: null,  // Yeni: Toprak Nemi
   humidity: null,
   temperature: null,
   pressure: null,      // hPa (BMP280); yoksa null
@@ -113,18 +114,14 @@ function minutesSinceLastIrrigation() {
 }
 
 // ── Algoritma servisini cagir ─────────────────────────────────
-async function callAlgorithm(humidity, temperature, pressureHpa) {
-  // soil_moisture donanimda olcumlenemiyor (toprak sensoru yok).
-  // Karar geregi: gecici PROXY olarak hava nemini soil yerine veriyoruz.
-  // Toprak nem sensoru eklenince burayi gercek soil degeriyle degistir.
-  //
+async function callAlgorithm(soilMoisture, humidity, temperature, pressureHpa) {
   // Basinc: BMP280 hPa gonderir (~1013). Algoritma kPa (80-120) bekler -> /10.
   const pressureKpa =
     typeof pressureHpa === "number" ? pressureHpa / 10 : DEFAULT_PRESSURE_KPA;
 
   const sensorData = {
-    soil_moisture: humidity,          // PROXY — toprak nem sensoru eklenince degisecek
-    air_humidity_pct: humidity,
+    soil_moisture: soilMoisture,      // Gerçek Toprak Nemi
+    air_humidity_pct: humidity,       // Hava Nemi
     temperature: temperature,
     pressure_kpa: pressureKpa,
     last_irrigation_minutes_ago: minutesSinceLastIrrigation(),
@@ -155,14 +152,14 @@ async function callAlgorithm(humidity, temperature, pressureHpa) {
 }
 
 // ── Karari CSV log'a yaz (performans degerlendirme icin) ──────
-async function logDecision(humidity, temperature, pressureHpa, decision) {
+async function logDecision(soilMoisture, humidity, temperature, pressureHpa, decision) {
   // Sutun sirasi algorithm_log_template.csv ile ayni.
   // soil_moisture_after / true_irrigation_required saha verisi yok -> bos birak.
   const pressureKpa =
     typeof pressureHpa === "number" ? pressureHpa / 10 : DEFAULT_PRESSURE_KPA;
   const row = [
     new Date().toISOString(),
-    humidity,                                  // soil_moisture_before (proxy)
+    soilMoisture,                              // soil_moisture_before (Gerçek toprak nemi)
     temperature,
     humidity,                                  // air_humidity_pct
     pressureKpa,
@@ -196,14 +193,16 @@ app.post("/ingest", async (req, res) => {
     return res.status(401).json({ error: "gecersiz token" });
   }
 
-  const { humidity, temperature, pressure, pump, pumpManual, greenLed } =
+  const { soilMoisture, humidity, temperature, pressure, pump, pumpManual, greenLed } =
     req.body || {};
 
+  // Artık okumaların gecerli sayilmasi icin soilMoisture da lazim
   const haveReadings =
-    typeof humidity === "number" && typeof temperature === "number";
+    typeof humidity === "number" && typeof temperature === "number" && typeof soilMoisture === "number";
 
   latest = {
     ...latest,
+    soilMoisture: typeof soilMoisture === "number" ? soilMoisture : latest.soilMoisture,
     humidity: typeof humidity === "number" ? humidity : latest.humidity,
     temperature: typeof temperature === "number" ? temperature : latest.temperature,
     pressure: typeof pressure === "number" ? pressure : latest.pressure,
@@ -215,7 +214,7 @@ app.post("/ingest", async (req, res) => {
   };
 
   if (haveReadings) {
-    history.push({ t: latest.updatedAt, humidity, temperature });
+    history.push({ t: latest.updatedAt, soilMoisture, humidity, temperature });
     if (history.length > MAX_HISTORY) history.shift();
   }
 
@@ -224,7 +223,7 @@ app.post("/ingest", async (req, res) => {
 
   // ── Otomatik modda algoritmayi calistir ──
   if (autoMode && haveReadings) {
-    const decision = await callAlgorithm(humidity, temperature, latest.pressure);
+    const decision = await callAlgorithm(soilMoisture, humidity, temperature, latest.pressure);
     if (decision) {
       latest.algoOnline = true;
       latest.irrigationRequired = decision.irrigation_required;
@@ -239,7 +238,7 @@ app.post("/ingest", async (req, res) => {
         ? { command: "on", durationSeconds: decision.pump_duration_seconds }
         : { command: "off", durationSeconds: 0 };
 
-      logDecision(humidity, temperature, latest.pressure, decision);
+      logDecision(soilMoisture, humidity, temperature, latest.pressure, decision);
     } else {
       latest.algoOnline = false;
     }

@@ -976,9 +976,30 @@
     <div class="section-title"><i data-lucide="activity"></i> Sensör Verileri</div>
     <div class="gauge-grid">
 
-      <!-- Nem Gauge -->
+      <!-- Toprak Nemi Gauge -->
+      <div class="gauge-card" id="cardSoil">
+        <div class="gauge-header"><i data-lucide="droplets"></i><span>Toprak Nemi</span></div>
+        <div class="gauge-wrap">
+          <svg viewBox="0 0 200 200" class="gauge-svg">
+            <circle class="gauge-track" cx="100" cy="100" r="70"
+                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+            <circle class="gauge-fill" cx="100" cy="100" r="70" id="soilFill"
+                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
+                    transform="rotate(135 100 100)"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="soilVal">—</span>
+            <div class="gauge-unit">%</div>
+          </div>
+        </div>
+        <div class="gauge-footer">
+          <span class="gauge-status wait" id="soilStatus">Bekleniyor</span>
+        </div>
+      </div>
+
+      <!-- Hava Nemi Gauge -->
       <div class="gauge-card" id="cardNem">
-        <div class="gauge-header"><i data-lucide="droplets"></i><span>Nem</span></div>
+        <div class="gauge-header"><i data-lucide="cloud"></i><span>Hava Nemi</span></div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 200 200" class="gauge-svg">
             <circle class="gauge-track" cx="100" cy="100" r="70"
@@ -1114,7 +1135,7 @@
     </div>
     <div class="modal-body">
       <div class="setting-row">
-        <label>Nem Eşiği (%)</label>
+        <label>Toprak Nemi Eşiği (%)</label>
         <input type="number" id="inpHumThresh" min="10" max="90" step="1" value="60">
       </div>
       <div class="setting-row">
@@ -1297,13 +1318,25 @@
       setBadge($('sysDht'), valid);
       setBadge($('sysBmp'), hasPress, 'AKTİF', 'YOK');
 
-      // ─ Nem gauge ─
+      // ─ Toprak Nemi gauge ─
+      const hasSoil = typeof d.soilMoisture === 'number';
+      if (hasSoil) {
+        setGauge($('soilFill'), d.soilMoisture / 100);
+        animateNum($('soilVal'), d.soilMoisture);
+        const soilOk = d.soilMoisture > HUM_THRESHOLD;
+        setGaugeColor($('soilFill'), soilOk ? null : 'red');
+        setStatus($('soilStatus'), soilOk ? 'ok' : 'bad', soilOk ? 'Normal' : 'Kurak');
+      } else {
+        $('soilVal').textContent = '—';
+        setStatus($('soilStatus'), 'wait', 'Veri yok');
+      }
+
+      // ─ Hava Nemi gauge (Eşik kontrolü kaldırıldı, artık sadece gösterge) ─
       if (valid) {
         setGauge($('nemFill'), d.humidity / 100);
         animateNum($('nemVal'), d.humidity);
-        const nemOk = d.humidity > HUM_THRESHOLD;
-        setGaugeColor($('nemFill'), nemOk ? null : 'red');
-        setStatus($('nemStatus'), nemOk ? 'ok' : 'bad', nemOk ? 'Normal' : 'Düşük');
+        setGaugeColor($('nemFill'), null);
+        setStatus($('nemStatus'), 'ok', 'Normal');
       } else {
         $('nemVal').textContent = '—';
         setStatus($('nemStatus'), 'wait', 'Veri yok');
@@ -1440,7 +1473,20 @@
           labels: [],
           datasets: [
             {
-              label: 'Nem (%)',
+              label: 'Toprak Nemi (%)',
+              data: [],
+              borderColor: '#3B82F6',
+              backgroundColor: 'rgba(59,130,246,0.06)',
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: '#3B82F6',
+              fill: true,
+              tension: 0.35,
+              yAxisID: 'y',
+            },
+            {
+              label: 'Hava Nemi (%)',
               data: [],
               borderColor: '#22C55E',
               backgroundColor: 'rgba(34,197,94,0.06)',
@@ -1574,8 +1620,9 @@
                d.getMinutes().toString().padStart(2, '0');
       });
       mainChart.data.labels = labels;
-      mainChart.data.datasets[0].data = history.map(p => p.humidity);
-      mainChart.data.datasets[1].data = history.map(p => p.temperature);
+      mainChart.data.datasets[0].data = history.map(p => p.soilMoisture || 0);
+      mainChart.data.datasets[1].data = history.map(p => p.humidity);
+      mainChart.data.datasets[2].data = history.map(p => p.temperature);
       mainChart.update('none');
     }
 

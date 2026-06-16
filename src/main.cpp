@@ -13,6 +13,7 @@
 #define DHT_PIN   15
 #define GREEN_LED 13
 #define RELAY_PIN 32  // IRLZ44N Gate — HIGH=pompa acik, LOW=kapali
+#define SOIL_PIN  34  // Analog Toprak Nem Sensörü Pini
 
 // ── Varsayilan WiFi (Preferences'ta kayit yoksa kullanilir) ───
 #define DEFAULT_SSID     "TURKNET_B7776"
@@ -36,9 +37,10 @@ String wifiSSID     = DEFAULT_SSID;
 String wifiPassword = DEFAULT_PASSWORD;
 
 // ── Global durum ──────────────────────────────────────────────
-float humidity    = 0;
+float humidity    = 0;     // Hava nemi
 float temperature = 0;
-float pressure    = 0;   // hPa (BMP280)
+float pressure    = 0;     // hPa (BMP280)
+float soilMoisture = 0;    // Toprak nemi (%)
 bool  dhtValid    = false;
 bool  bmpValid    = false;
 bool  pumpActive  = false;
@@ -76,7 +78,8 @@ void controlRelay() {
     // Otomatik modda backend komutu geldiyse karari algoritmaya birak.
     // Hic backend komutu gelmediyse yerel esik failsafe devreye girer.
     if (algoCommandSeen) return;
-    pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
+    // Artık failsafe, hava nemi (humidity) yerine doğrudan toprak nemine (soilMoisture) bakıyor.
+    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
 }
 
@@ -98,6 +101,17 @@ void readSensors() {
     if (bmpValid) {
         pressure = bmp.readPressure() / 100.0F; // Pa → hPa
     }
+    
+    // Toprak Nemi Okuma (Pin 34)
+    // ESP32 ADC: 0 - 4095. Kuru hava: ~4095, Su içi: ~1200 (sensör tipine göre değişir)
+    // Kalibrasyon değerleri (gerekirse sahada güncellenir):
+    int dryValue = 4095;
+    int wetValue = 1200;
+    int rawVal = analogRead(SOIL_PIN);
+    soilMoisture = map(rawVal, dryValue, wetValue, 0, 100);
+    // Değeri %0-%100 arasına sınırla
+    if (soilMoisture < 0) soilMoisture = 0;
+    if (soilMoisture > 100) soilMoisture = 100;
 }
 
 // ── Backend'e veri gonder, cevaptaki komutu uygula ────────────
@@ -122,6 +136,7 @@ void sendToBackend() {
     if (bmpValid) {
         doc["pressure"] = pressure;
     }
+    doc["soilMoisture"] = soilMoisture; // Yeni eklenen toprak nemi
     doc["pump"]       = pumpActive;
     doc["pumpManual"] = pumpManual;
     doc["greenLed"]   = (dhtValid && temperature > TEMP_THRESHOLD);
@@ -189,7 +204,7 @@ void sendToBackend() {
                     pumpManual = false;
                     pumpUntil  = 0;
                     // Backend "auto" komutu gelince de hemen esige gore uygula.
-                    pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
+                    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
                     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
                 }
                 Serial.printf("[CLOUD] Komut: %s (%.2f sn)\n", cmd, dur);
@@ -253,14 +268,19 @@ String buildPage() {
     // ── Kart ızgarası ─────────────────────────────────────────
     html += F("<div class='grid'>");
 
-    // KART 1: Nem
-    // nemRenk → nem eşiğin üstündeyse normal (yeşil), altındaysa uyarı (kırmızı)
-    // dhtValid → sensör okunabiliyorsa değer göster, değilse "---"
-    String nemRenk = (dhtValid && humidity > HUMIDITY_THRESHOLD) ? "" : " warn";
-    html += "<div class='card'><div class='lbl'>Nem</div>"
-            "<div class='val" + nemRenk + "'>" +
-            (dhtValid ? String(humidity, 1) + "%" : "---") + "</div>"
+    // KART 0: Toprak Nemi
+    String soilRenk = (soilMoisture > HUMIDITY_THRESHOLD) ? "" : " warn";
+    html += "<div class='card'><div class='lbl'>Toprak Nemi</div>"
+            "<div class='val" + soilRenk + "'>" +
+            String(soilMoisture, 1) + "%</div>"
             "<div class='lbl'>Esik: %" + String(HUMIDITY_THRESHOLD, 0) + "</div></div>";
+
+    // KART 1: Hava Nemi
+    // dhtValid → sensör okunabiliyorsa değer göster, değilse "---"
+    html += "<div class='card'><div class='lbl'>Hava Nemi</div>"
+            "<div class='val'>" +
+            (dhtValid ? String(humidity, 1) + "%" : "---") + "</div>"
+            "<div class='lbl'>DHT22</div></div>";
 
     // KART 2: Sıcaklık
     // sicRenk → sıcaklık eşiğin üstündeyse uyarı (kırmızı)
@@ -496,7 +516,7 @@ void handlePumpAuto() {
     pumpUntil  = 0;
     // Hemen esige gore durumu uygula; bir sonraki backend cevabini bekleme.
     // Bu olmadan son manuel durumu relay'de kaliyor.
-    pumpActive = dhtValid && (humidity < HUMIDITY_THRESHOLD);
+    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
     server.sendHeader("Location", "/");
     server.send(302);
