@@ -1280,9 +1280,16 @@
 
     <!-- Chart -->
     <div class="chart-panel">
-      <div class="panel-title"><i data-lucide="trending-up"></i> Nem &amp; Sıcaklık Grafiği</div>
+      <div class="panel-title"><i data-lucide="trending-up"></i> Son 15 Dakika (Canlı)</div>
       <div class="chart-container">
         <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-panel" style="margin-top: 24px;">
+      <div class="panel-title"><i data-lucide="history"></i> Son 2.5 Saat (Geçmiş)</div>
+      <div class="chart-container">
+        <canvas id="historyChart"></canvas>
       </div>
     </div>
 
@@ -1569,7 +1576,10 @@
       // ─ Chart ─
       // DB aktifse grafik kaynagi loadHistory (uzun gecmis); RAM history
       // ile ezme. DB yoksa canli RAM verisini (son 60) ciz.
-      if (!dbActive && Array.isArray(d.history)) drawChart(d.history);
+      if (!dbActive && Array.isArray(d.history)) {
+        drawChart(mainChart, d.history);
+        drawChart(longChart, d.history);
+      }
     }
 
     // ── Algorithm Panel ──────────────────────────────────
@@ -1651,10 +1661,11 @@
 
     // ── Chart.js ─────────────────────────────────────────
     let mainChart = null;
+    let longChart = null;
 
-    function initChart() {
-      const ctx = $('mainChart').getContext('2d');
-      mainChart = new Chart(ctx, {
+    function createChart(canvasId) {
+      const ctx = $(canvasId).getContext('2d');
+      return new Chart(ctx, {
         type: 'line',
         data: {
           labels: [],
@@ -1775,8 +1786,10 @@
           animation: { duration: 500, easing: 'easeInOutQuart' }
         }
       });
+    }
 
-      // Threshold line plugin
+    function initChart() {
+      // Register threshold line plugin ONCE
       Chart.register({
         id: 'humThreshLine',
         afterDraw(chart) {
@@ -1797,20 +1810,23 @@
           ctx.restore();
         }
       });
+
+      mainChart = createChart('mainChart');
+      longChart = createChart('historyChart');
     }
 
-    function drawChart(history) {
-      if (!mainChart || history.length < 2) return;
+    function drawChart(chartObj, history) {
+      if (!chartObj || history.length < 2) return;
       const labels = history.map(p => {
         const d = new Date(p.t);
         return d.getHours().toString().padStart(2, '0') + ':' +
                d.getMinutes().toString().padStart(2, '0');
       });
-      mainChart.data.labels = labels;
-      mainChart.data.datasets[0].data = history.map(p => p.soilMoisture || 0);
-      mainChart.data.datasets[1].data = history.map(p => p.humidity);
-      mainChart.data.datasets[2].data = history.map(p => p.temperature);
-      mainChart.update('none');
+      chartObj.data.labels = labels;
+      chartObj.data.datasets[0].data = history.map(p => p.soilMoisture || 0);
+      chartObj.data.datasets[1].data = history.map(p => p.humidity);
+      chartObj.data.datasets[2].data = history.map(p => p.temperature);
+      chartObj.update('none');
     }
 
     // ── Poll ─────────────────────────────────────────────
@@ -1834,19 +1850,26 @@
     // gecilir; canli RAM verisi (son 60) yine de poll ile gelir.
     async function loadHistory() {
       try {
-        const r = await fetch(BACKEND + '/history?readings=300&decisions=20', { cache: 'no-store' });
+        const r = await fetch(BACKEND + '/history?readings=3000&decisions=20', { cache: 'no-store' });
         if (!r.ok) return;
         const h = await r.json();
         if (!h.dbReady) return;
 
         // Grafik: DB olcumleri (eskiden yeniye geliyor)
         if (Array.isArray(h.readings) && h.readings.length >= 2) {
-          drawChart(h.readings.map(p => ({
+          const formatted = h.readings.map(p => ({
             t: p.ts,
             soilMoisture: p.soil_moisture,
             humidity: p.humidity,
             temperature: p.temperature,
-          })));
+          }));
+          
+          // Son 15 dk (yaklaşık 300 nokta)
+          drawChart(mainChart, formatted.slice(-300));
+          
+          // Son 2.5 saat için veriyi seyrelt (her 10 veriden 1'i) (yaklaşık 300 nokta)
+          const downsampled = formatted.filter((_, i) => i % 10 === 0);
+          drawChart(longChart, downsampled);
         }
 
         // Timeline: DB kararlari (en yeni ustte geliyor)

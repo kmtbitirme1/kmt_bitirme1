@@ -352,7 +352,7 @@ app.get("/history", async (req, res) => {
   if (!dbReady()) {
     return res.json({ dbReady: false, readings: [], decisions: [] });
   }
-  const rLimit = Math.min(parseInt(req.query.readings) || 200, 2000);
+  const rLimit = Math.min(parseInt(req.query.readings) || 200, 3000);
   const dLimit = Math.min(parseInt(req.query.decisions) || 50, 500);
   const [readings, decisions] = await Promise.all([
     recentReadings(rLimit),
