@@ -1461,10 +1461,11 @@
       $('sysMode').className = 'sys-badge ' + (d.autoMode ? 'ok' : 'wait');
       setBadge($('sysDht'), valid);
       setBadge($('sysBmp'), hasPress, 'AKTİF', 'YOK');
-      setBadge($('sysSoil'), hasSoil, 'AKTİF', 'YOK');
 
       // ─ Toprak Nemi gauge ─
       const hasSoil = typeof d.soilMoisture === 'number';
+      setBadge($('sysSoil'), hasSoil, 'AKTİF', 'YOK');
+      
       if (hasSoil) {
         setGauge($('soilFill'), d.soilMoisture / 100);
         animateNum($('soilVal'), d.soilMoisture);
