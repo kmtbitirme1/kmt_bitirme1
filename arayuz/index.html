@@ -1280,14 +1280,24 @@
 
     <!-- Chart -->
     <div class="chart-panel">
-      <div class="panel-title"><i data-lucide="trending-up"></i> Son 15 Dakika (Canlı)</div>
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <div><i data-lucide="trending-up"></i> Son 15 Dakika (Canlı)</div>
+        <button class="ctrl-btn" id="btnDownload15" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2);">
+          <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> CSV İndir
+        </button>
+      </div>
       <div class="chart-container">
         <canvas id="mainChart"></canvas>
       </div>
     </div>
 
     <div class="chart-panel" style="margin-top: 24px;">
-      <div class="panel-title"><i data-lucide="history"></i> Son 2.5 Saat (Geçmiş)</div>
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <div><i data-lucide="history"></i> Son 2.5 Saat (Geçmiş)</div>
+        <button class="ctrl-btn" id="btnDownload2h" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2);">
+          <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> CSV İndir
+        </button>
+      </div>
       <div class="chart-container">
         <canvas id="historyChart"></canvas>
       </div>
@@ -1318,6 +1328,10 @@
     let lastLoggedLabel = null;
     let backendReached = false;
     let dbActive = false;   // Postgres aktif mi (grafik kaynagini belirler)
+    
+    // Indirilebilir veriler (CSV icin)
+    let data15m = [];
+    let data2h = [];
 
     // ── Sidebar Toggle ───────────────────────────────────
     $('menuBtn').addEventListener('click', () => {
@@ -1577,6 +1591,8 @@
       // DB aktifse grafik kaynagi loadHistory (uzun gecmis); RAM history
       // ile ezme. DB yoksa canli RAM verisini (son 60) ciz.
       if (!dbActive && Array.isArray(d.history)) {
+        data15m = d.history;
+        data2h = d.history;
         drawChart(mainChart, d.history);
         drawChart(longChart, d.history);
       }
@@ -1865,11 +1881,13 @@
           }));
           
           // Son 15 dk (yaklaşık 300 nokta)
-          drawChart(mainChart, formatted.slice(-300));
+          data15m = formatted.slice(-300);
+          drawChart(mainChart, data15m);
           
           // Son 2.5 saat için veriyi seyrelt (her 10 veriden 1'i) (yaklaşık 300 nokta)
           const downsampled = formatted.filter((_, i) => i % 10 === 0);
-          drawChart(longChart, downsampled);
+          data2h = downsampled;
+          drawChart(longChart, data2h);
         }
 
         // Timeline: DB kararlari (en yeni ustte geliyor)
@@ -1912,6 +1930,29 @@
         toast('Komut gönderilemedi', 'err');
       }
     }
+
+    // ── CSV Indirme ──────────────────────────────────────
+    function downloadCSV(dataArray, filename) {
+      if (!dataArray || dataArray.length === 0) return toast('İndirilecek veri bulunamadı', 'err');
+      
+      const header = "Tarih,Toprak Nemi (%),Hava Nemi (%),Sicaklik (C)\n";
+      const rows = dataArray.map(p => {
+        const dateStr = new Date(p.t || p.ts).toLocaleString('tr-TR');
+        return `${dateStr},${p.soilMoisture || p.soil_moisture || 0},${p.humidity || 0},${p.temperature || 0}`;
+      }).join("\n");
+      
+      const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    $('btnDownload15').addEventListener('click', () => downloadCSV(data15m, 'son_15_dk_veriler.csv'));
+    $('btnDownload2h').addEventListener('click', () => downloadCSV(data2h, 'son_2_5_saat_veriler.csv'));
 
     // ── Init ─────────────────────────────────────────────
     lucide.createIcons();
