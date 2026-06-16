@@ -270,7 +270,7 @@ app.post("/ingest", async (req, res) => {
   };
 
   if (haveReadings) {
-    history.push({ t: latest.updatedAt, soilMoisture, humidity, temperature });
+    history.push({ t: latest.updatedAt, soilMoisture, humidity, temperature, pump: latest.pump });
     if (history.length > MAX_HISTORY) history.shift();
     // Kalici kayit (DB yoksa no-op).
     insertReading({

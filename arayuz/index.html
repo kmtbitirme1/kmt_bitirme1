@@ -1714,6 +1714,21 @@
               yAxisID: 'y',
             },
             {
+              type: 'line',
+              label: 'Pompa Çalıştı',
+              data: [],
+              borderColor: 'transparent',
+              backgroundColor: '#3B82F6',
+              pointRadius: 6,
+              pointHoverRadius: 8,
+              pointBackgroundColor: '#3B82F6',
+              pointBorderColor: '#ffffff',
+              pointBorderWidth: 2,
+              showLine: false,
+              yAxisID: 'y',
+              order: 1
+            },
+            {
               label: 'Hava Nemi (%)',
               data: [],
               borderColor: '#22C55E',
@@ -1796,6 +1811,7 @@
                 font: { family: 'Space Grotesk', size: 11, weight: '600' },
               }
             },
+
             y1: {
               position: 'right',
               min: 0, max: 50,
@@ -1854,8 +1870,9 @@
       });
       chartObj.data.labels = labels;
       chartObj.data.datasets[0].data = history.map(p => p.soilMoisture || 0);
-      chartObj.data.datasets[1].data = history.map(p => p.humidity);
-      chartObj.data.datasets[2].data = history.map(p => p.temperature);
+      chartObj.data.datasets[1].data = history.map(p => p.pump ? (p.soilMoisture || 0) : null);
+      chartObj.data.datasets[2].data = history.map(p => p.humidity);
+      chartObj.data.datasets[3].data = history.map(p => p.temperature);
       chartObj.update('none');
     }
 
@@ -1915,14 +1932,22 @@
             soilMoisture: p.soil_moisture,
             humidity: p.humidity,
             temperature: p.temperature,
+            pump: p.pump,
           }));
           
           // Son 15 dk (yaklaşık 300 nokta)
           data15m = formatted.slice(-300);
           drawChart(mainChart, data15m);
           
-          // Son 2.5 saat için veriyi seyrelt (her 10 veriden 1'i) (yaklaşık 300 nokta)
-          const downsampled = formatted.filter((_, i) => i % 10 === 0);
+          // Son 2.5 saat için veriyi seyrelt (her 10 veriden 1'i)
+          // Seyreltme yaparken aradaki kısa pompa aktif anlarını kaybetmemek için chunk içindeki "pump" statüsünü koru
+          const downsampled = [];
+          for (let i = 0; i < formatted.length; i += 10) {
+            const chunk = formatted.slice(i, i + 10);
+            const point = { ...chunk[0] };
+            if (chunk.some(p => p.pump)) point.pump = true;
+            downsampled.push(point);
+          }
           data2h = downsampled;
           drawChart(longChart, data2h);
           updateStats(data2h);
