@@ -13,7 +13,13 @@
 #define DHT_PIN   15
 #define GREEN_LED 13
 #define RELAY_PIN 32  // IRLZ44N Gate — HIGH=pompa acik, LOW=kapali
-#define SOIL_PIN  34  // Analog Toprak Nem Sensörü Pini
+#define SOIL_PIN  34  // Toprak nem sensoru AO — ADC1 (WiFi ile uyumlu)
+
+// ── Toprak nem sensoru kalibrasyon degerleri ──────────────────
+// Sensoru havada tut → Serial'dan raw degeri oku → SOIL_DRY yap
+// Sensoru suya daldır → Serial'dan raw degeri oku → SOIL_WET yap
+#define SOIL_DRY  4095  // Havada / tam kuru
+#define SOIL_WET  1500  // Suda / tam islak (kalibre et!)
 
 // ── Varsayilan WiFi (Preferences'ta kayit yoksa kullanilir) ───
 #define DEFAULT_SSID     "TURKNET_B7776"
@@ -23,8 +29,9 @@
 #define BACKEND_URL "https://kmt-bitirme1.onrender.com"
 
 // ── Esik degerleri (NVS'den yuklenir, web'den degistirilebilir) ─
-float HUMIDITY_THRESHOLD = 60.0;  // % altinda pompa acilir
+float SOIL_THRESHOLD     = 40.0;  // toprak nem % altinda pompa acilir (kuru = dusuk deger)
 float TEMP_THRESHOLD     = 30.0;  // C ustunde yesil LED yanar
+float HUMIDITY_THRESHOLD = 60.0;  // DHT22 nem esigi — artik sadece gosterim icin
 
 // ── Nesneler ──────────────────────────────────────────────────
 DHTesp          dht;
@@ -37,14 +44,14 @@ String wifiSSID     = DEFAULT_SSID;
 String wifiPassword = DEFAULT_PASSWORD;
 
 // ── Global durum ──────────────────────────────────────────────
-float humidity    = 0;     // Hava nemi
-float temperature = 0;
-float pressure    = 0;     // hPa (BMP280)
-float soilMoisture = 0;    // Toprak nemi (%)
-bool  dhtValid    = false;
-bool  bmpValid    = false;
-bool  pumpActive  = false;
-bool  pumpManual  = false;
+float humidity     = 0;
+float temperature  = 0;
+float pressure     = 0;    // hPa (BMP280)
+float soilMoisture = 0;    // % (0=kuru, 100=islak) — toprak nem sensoru
+bool  dhtValid     = false;
+bool  bmpValid     = false;
+bool  pumpActive   = false;
+bool  pumpManual   = false;
 
 // Backend (Python algoritma) ile en az bir kez konusuldu mu?
 // Konusulmadiysa asagidaki yerel esik kontrolu failsafe olarak devrede kalir.
@@ -76,10 +83,10 @@ void controlRelay() {
     if (pumpManual || pumpUntil != 0) return;
 
     // Otomatik modda backend komutu geldiyse karari algoritmaya birak.
-    // Hic backend komutu gelmediyse yerel esik failsafe devreye girer.
+    // Hic backend komutu gelmediyse yerel toprak nem esigi failsafe devreye girer.
     if (algoCommandSeen) return;
-    // Artık failsafe, hava nemi (humidity) yerine doğrudan toprak nemine (soilMoisture) bakıyor.
-    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
+    // Pompa kontrolu artik DHT22 nemi degil, TOPRAK NEM SENSORUNDEN geliyor.
+    pumpActive = (soilMoisture < SOIL_THRESHOLD);
     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
 }
 
@@ -90,7 +97,7 @@ void updateLED() {
 
 // ── Sensor okuma ──────────────────────────────────────────────
 void readSensors() {
-    // DHT22
+    // DHT22 — sicaklik ve ortam nemi (pompa kontrolunde kullanilmiyor)
     TempAndHumidity data = dht.getTempAndHumidity();
     dhtValid = (dht.getStatus() == DHTesp::ERROR_NONE);
     if (dhtValid) {
@@ -101,17 +108,13 @@ void readSensors() {
     if (bmpValid) {
         pressure = bmp.readPressure() / 100.0F; // Pa → hPa
     }
-    
-    // Toprak Nemi Okuma (Pin 34)
-    // ESP32 ADC: 0 - 4095. Kuru hava: ~4095, Su içi: ~1200 (sensör tipine göre değişir)
-    // Kalibrasyon değerleri (gerekirse sahada güncellenir):
-    int dryValue = 4095;
-    int wetValue = 1200;
-    int rawVal = analogRead(SOIL_PIN);
-    soilMoisture = map(rawVal, dryValue, wetValue, 0, 100);
-    // Değeri %0-%100 arasına sınırla
-    if (soilMoisture < 0) soilMoisture = 0;
-    if (soilMoisture > 100) soilMoisture = 100;
+    // Toprak nem sensoru — AO pininden analog okuma
+    // Ham deger: SOIL_DRY(kuru)=yuksek, SOIL_WET(islak)=dusuk
+    // map() ile 0(kuru) - 100(islak) araligina cevriliyor
+    int raw = analogRead(SOIL_PIN);
+    raw = constrain(raw, SOIL_WET, SOIL_DRY);
+    soilMoisture = map(raw, SOIL_DRY, SOIL_WET, 0, 100);
+    Serial.printf("[TOPRAK] Ham: %d  Nem: %.0f%%\n", raw, soilMoisture);
 }
 
 // ── Backend'e veri gonder, cevaptaki komutu uygula ────────────
@@ -136,10 +139,10 @@ void sendToBackend() {
     if (bmpValid) {
         doc["pressure"] = pressure;
     }
-    doc["soilMoisture"] = soilMoisture; // Yeni eklenen toprak nemi
-    doc["pump"]       = pumpActive;
-    doc["pumpManual"] = pumpManual;
-    doc["greenLed"]   = (dhtValid && temperature > TEMP_THRESHOLD);
+    doc["soilMoisture"] = soilMoisture;   // toprak nem % — pompa kararini buradan aliyor
+    doc["pump"]         = pumpActive;
+    doc["pumpManual"]   = pumpManual;
+    doc["greenLed"]     = (dhtValid && temperature > TEMP_THRESHOLD);
 
     String body;
     serializeJson(doc, body);
@@ -203,8 +206,8 @@ void sendToBackend() {
                 } else if (strcmp(cmd, "auto") == 0) {
                     pumpManual = false;
                     pumpUntil  = 0;
-                    // Backend "auto" komutu gelince de hemen esige gore uygula.
-                    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
+                    // Backend "auto" komutu gelince de hemen toprak nem esigine gore uygula.
+                    pumpActive = (soilMoisture < SOIL_THRESHOLD);
                     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
                 }
                 Serial.printf("[CLOUD] Komut: %s (%.2f sn)\n", cmd, dur);
@@ -268,17 +271,17 @@ String buildPage() {
     // ── Kart ızgarası ─────────────────────────────────────────
     html += F("<div class='grid'>");
 
-    // KART 0: Toprak Nemi
-    String soilRenk = (soilMoisture > HUMIDITY_THRESHOLD) ? "" : " warn";
+    // KART 1: Toprak Nemi — pompa bu degere gore calisiyor
+    // soilRenk → esik altindaysa uyari (kuru = kirmizi = pompa ac)
+    String soilRenk = (soilMoisture < SOIL_THRESHOLD) ? " warn" : "";
     html += "<div class='card'><div class='lbl'>Toprak Nemi</div>"
-            "<div class='val" + soilRenk + "'>" +
-            String(soilMoisture, 1) + "%</div>"
-            "<div class='lbl'>Esik: %" + String(HUMIDITY_THRESHOLD, 0) + "</div></div>";
+            "<div class='val" + soilRenk + "'>" + String(soilMoisture, 0) + "%</div>"
+            "<div class='lbl'>Esik: %" + String(SOIL_THRESHOLD, 0) + "</div></div>";
 
-    // KART 1: Hava Nemi
-    // dhtValid → sensör okunabiliyorsa değer göster, değilse "---"
-    html += "<div class='card'><div class='lbl'>Hava Nemi</div>"
-            "<div class='val'>" +
+    // KART 2: Ortam Nemi — sadece gosterim, pompayı kontrol etmiyor
+    String nemRenk = (dhtValid && humidity > HUMIDITY_THRESHOLD) ? "" : " warn";
+    html += "<div class='card'><div class='lbl'>Ortam Nemi</div>"
+            "<div class='val" + nemRenk + "'>" +
             (dhtValid ? String(humidity, 1) + "%" : "---") + "</div>"
             "<div class='lbl'>DHT22</div></div>";
 
@@ -371,11 +374,12 @@ String buildThreshPage(const String& msg = "") {
 
     html += "<form action='/save-thresh' method='get'>"
             "<div class='row'>"
-            "<div><label>Nem Esigi (%)</label>"
-            "<input type='number' name='hum' min='1' max='100' step='1' value='" + String((int)HUMIDITY_THRESHOLD) + "' required></div>"
+            "<div><label>Toprak Nem Esigi (%)</label>"
+            "<input type='number' name='soil' min='1' max='100' step='1' value='" + String((int)SOIL_THRESHOLD) + "' required></div>"
             "<div><label>Sicaklik Esigi (C)</label>"
             "<input type='number' name='tmp' min='-10' max='80' step='1' value='" + String((int)TEMP_THRESHOLD) + "' required></div>"
             "</div>"
+            "<p style='color:#888;font-size:.8em;margin:0 0 12px'>Toprak nemi esik altina dustugunde pompa acar (kuru toprak)</p>"
             "<button class='btn' type='submit'>Kaydet</button>"
             "</form>"
             "</div>"
@@ -437,20 +441,20 @@ void handleWifi() { server.send(200, "text/html", buildWifiPage()); }
 
 // GET /save-thresh?hum=X&tmp=Y → Esik degerlerini NVS'e yaz, aninda uygula
 void handleSaveThresh() {
-    if (server.hasArg("hum") && server.hasArg("tmp")) {
-        HUMIDITY_THRESHOLD = server.arg("hum").toFloat();
-        TEMP_THRESHOLD     = server.arg("tmp").toFloat();
+    if (server.hasArg("soil") && server.hasArg("tmp")) {
+        SOIL_THRESHOLD = server.arg("soil").toFloat();
+        TEMP_THRESHOLD = server.arg("tmp").toFloat();
 
         prefs.begin("thresh", false);
-        prefs.putFloat("hum", HUMIDITY_THRESHOLD);
-        prefs.putFloat("tmp", TEMP_THRESHOLD);
+        prefs.putFloat("soil", SOIL_THRESHOLD);
+        prefs.putFloat("tmp",  TEMP_THRESHOLD);
         prefs.end();
 
-        Serial.printf("[AYAR] Yeni esikler — Nem: %.0f%%  Sicaklik: %.0f C\n",
-                      HUMIDITY_THRESHOLD, TEMP_THRESHOLD);
+        Serial.printf("[AYAR] Yeni esikler — Toprak Nem: %.0f%%  Sicaklik: %.0f C\n",
+                      SOIL_THRESHOLD, TEMP_THRESHOLD);
         server.send(200, "text/html",
-            buildThreshPage("Kaydedildi: Nem %" +
-                String((int)HUMIDITY_THRESHOLD) + "  /  Sicaklik " +
+            buildThreshPage("Kaydedildi: Toprak Nem %" +
+                String((int)SOIL_THRESHOLD) + "  /  Sicaklik " +
                 String((int)TEMP_THRESHOLD) + " C"));
     } else {
         server.send(200, "text/html", buildThreshPage("Gecersiz deger!"));
@@ -512,11 +516,10 @@ void handlePumpOff() {
 
 // GET /pump/auto → Otomatik moda dön (algoritma / esik karari)
 void handlePumpAuto() {
-    pumpManual = false;
-    pumpUntil  = 0;
-    // Hemen esige gore durumu uygula; bir sonraki backend cevabini bekleme.
-    // Bu olmadan son manuel durumu relay'de kaliyor.
-    pumpActive = (soilMoisture < HUMIDITY_THRESHOLD);
+    pumpManual        = false;
+    pumpUntil         = 0;
+    algoCommandSeen   = false; // yerel oto moda donunce toprak nem esigi devreye girsin
+    pumpActive = (soilMoisture < SOIL_THRESHOLD);
     digitalWrite(RELAY_PIN, pumpActive ? HIGH : LOW);
     server.sendHeader("Location", "/");
     server.send(302);
@@ -528,6 +531,7 @@ void setup() {
 
     pinMode(GREEN_LED, OUTPUT);
     pinMode(RELAY_PIN, OUTPUT);
+    pinMode(SOIL_PIN,  INPUT);   // Toprak nem sensoru AO — analog giris
     digitalWrite(GREEN_LED, LOW);
     digitalWrite(RELAY_PIN, LOW);
 
@@ -562,11 +566,11 @@ void setup() {
 
     // NVS'den esik degerlerini yukle
     prefs.begin("thresh", true);
-    HUMIDITY_THRESHOLD = prefs.getFloat("hum", 60.0);
-    TEMP_THRESHOLD     = prefs.getFloat("tmp", 30.0);
+    SOIL_THRESHOLD = prefs.getFloat("soil", 40.0);
+    TEMP_THRESHOLD = prefs.getFloat("tmp",  30.0);
     prefs.end();
-    Serial.printf("[AYAR] Esikler — Nem: %.0f%%  Sicaklik: %.0f C\n",
-                  HUMIDITY_THRESHOLD, TEMP_THRESHOLD);
+    Serial.printf("[AYAR] Esikler — Toprak Nem: %.0f%%  Sicaklik: %.0f C\n",
+                  SOIL_THRESHOLD, TEMP_THRESHOLD);
 
     // NVS'den WiFi bilgilerini yukle; kayıt yoksa DEFAULT_SSID kullanılır
     prefs.begin("wifi", true); // read-only
@@ -577,9 +581,16 @@ void setup() {
 
     WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
     Serial.print("WiFi baglaniliyor");
-    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-    Serial.println("\nBaglandi! IP: " + WiFi.localIP().toString());
-    Serial.println("Backend: " BACKEND_URL);
+    unsigned long wifiStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 30000) {
+        delay(500); Serial.print(".");
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nBaglandi! IP: " + WiFi.localIP().toString());
+        Serial.println("Backend: " BACKEND_URL);
+    } else {
+        Serial.println("\n[UYARI] WiFi baglanamiyor, sensörler calismeye devam ediyor.");
+    }
 
     server.on("/",            handleRoot);
     server.on("/pump/on",     handlePumpOn);
