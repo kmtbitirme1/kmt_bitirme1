@@ -186,6 +186,48 @@ app.get("/", (_req, res) => {
   res.json({ ok: true, service: "akilli-tarim-backend", online: isOnline() });
 });
 
+// ── DEBUG: algoritma baglantisini canli test et ───────────────
+// Node -> Python istegini gercek sensor verisiyle atar, ham sonucu/hatayi doner.
+app.get("/debug/algo", async (_req, res) => {
+  const sm = typeof latest.soilMoisture === "number" ? latest.soilMoisture : 0;
+  const hum = typeof latest.humidity === "number" ? latest.humidity : 50;
+  const temp = typeof latest.temperature === "number" ? latest.temperature : 25;
+  const pressureKpa =
+    typeof latest.pressure === "number" ? latest.pressure / 10 : DEFAULT_PRESSURE_KPA;
+  const sensorData = {
+    soil_moisture: sm,
+    air_humidity_pct: hum,
+    temperature: temp,
+    pressure_kpa: pressureKpa,
+    last_irrigation_minutes_ago: minutesSinceLastIrrigation(),
+    config: { target_soil_moisture: appConfig.humThreshold },
+  };
+
+  const t0 = Date.now();
+  let status = null, body = null, fetchError = null;
+  try {
+    const r = await fetch(`${ALGO_URL}/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sensorData),
+    });
+    status = r.status;
+    body = await r.text();
+  } catch (e) {
+    fetchError = `${e.name}: ${e.message}${e.cause ? " | cause: " + e.cause : ""}`;
+  }
+
+  res.json({
+    algoUrl: ALGO_URL,
+    nodeVersion: process.version,
+    sent: sensorData,
+    elapsedMs: Date.now() - t0,
+    httpStatus: status,       // 200 beklenir
+    fetchError,               // dolu ise Node fetch patladi (asil sebep burada)
+    body: body ? body.slice(0, 500) : null,
+  });
+});
+
 // ── ESP32 -> backend: veri yaz ────────────────────────────────
 // Beklenen body: { humidity, temperature, pump, pumpManual, greenLed }
 app.post("/ingest", async (req, res) => {
