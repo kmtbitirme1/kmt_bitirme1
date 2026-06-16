@@ -15,7 +15,7 @@ databases:
 
 services:
   - type: web
-    name: akilli-tarim-backend
+    name: kmt-bitirme1
     runtime: node
     plan: free
     rootDir: backend
