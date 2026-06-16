@@ -19,6 +19,14 @@
 import express from "express";
 import cors from "cors";
 import { appendFile, access, writeFile } from "node:fs/promises";
+import {
+  initDb,
+  dbReady,
+  insertReading,
+  insertDecision,
+  recentReadings,
+  recentDecisions,
+} from "./db.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -258,6 +266,12 @@ app.post("/ingest", async (req, res) => {
   if (haveReadings) {
     history.push({ t: latest.updatedAt, soilMoisture, humidity, temperature });
     if (history.length > MAX_HISTORY) history.shift();
+    // Kalici kayit (DB yoksa no-op).
+    insertReading({
+      soilMoisture, humidity, temperature,
+      pressure: latest.pressure, pump: latest.pump,
+      pumpManual: latest.pumpManual, greenLed: latest.greenLed,
+    });
   }
 
   // Pompa ON'a gecmisse son sulama zamanini guncelle.
@@ -281,6 +295,21 @@ app.post("/ingest", async (req, res) => {
         : { command: "off", durationSeconds: 0 };
 
       logDecision(soilMoisture, humidity, temperature, latest.pressure, decision);
+
+      // Kalici karar kaydi (DB yoksa no-op).
+      const pressureKpa =
+        typeof latest.pressure === "number" ? latest.pressure / 10 : DEFAULT_PRESSURE_KPA;
+      insertDecision({
+        soilMoisture, temperature, airHumidityPct: humidity, pressureKpa,
+        onProbability: decision.on_probability,
+        decisionThreshold: decision.decision_threshold,
+        irrigationRequired: decision.irrigation_required,
+        decisionLabel: decision.decision_label,
+        pumpDurationSeconds: decision.pump_duration_seconds,
+        moistureDeficit: decision.moisture_deficit,
+        targetSoilMoisture: decision.config?.target_soil_moisture,
+        decisionReason: decision.decision_reason,
+      });
     } else {
       latest.algoOnline = false;
     }
@@ -306,8 +335,24 @@ app.get("/api", (_req, res) => {
     online: isOnline(),
     autoMode,
     history,
-    config: appConfig
+    config: appConfig,
+    dbReady: dbReady(),   // kalici kayit aktif mi
   });
+});
+
+// ── Frontend -> backend: kalici gecmis (DB) ───────────────────
+// ?readings=N  ?decisions=M ile limit ayarlanabilir.
+app.get("/history", async (req, res) => {
+  if (!dbReady()) {
+    return res.json({ dbReady: false, readings: [], decisions: [] });
+  }
+  const rLimit = Math.min(parseInt(req.query.readings) || 200, 2000);
+  const dLimit = Math.min(parseInt(req.query.decisions) || 50, 500);
+  const [readings, decisions] = await Promise.all([
+    recentReadings(rLimit),
+    recentDecisions(dLimit),
+  ]);
+  res.json({ dbReady: true, readings, decisions });
 });
 
 // ── Frontend -> backend: pompa komutu birak ───────────────────
@@ -352,9 +397,10 @@ app.get("/command", (_req, res) => {
   res.json({ command: cmd });
 });
 
-ensureLogHeader().finally(() => {
+Promise.allSettled([ensureLogHeader(), initDb()]).finally(() => {
   app.listen(PORT, () => {
     console.log(`Akilli Tarim backend calisiyor — port ${PORT}`);
     console.log(`Algoritma servisi: ${ALGO_URL}`);
+    console.log(`Kalici DB: ${dbReady() ? "AKTIF (Postgres)" : "KAPALI (RAM modu)"}`);
   });
 });

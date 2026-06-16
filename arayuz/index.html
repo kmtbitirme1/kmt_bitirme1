@@ -1257,6 +1257,7 @@
     let decisionLog = [];
     let lastLoggedLabel = null;
     let backendReached = false;
+    let dbActive = false;   // Postgres aktif mi (grafik kaynagini belirler)
 
     // ── Sidebar Toggle ───────────────────────────────────
     $('menuBtn').addEventListener('click', () => {
@@ -1504,8 +1505,13 @@
       // ─ Decision log ─
       updateLog(d);
 
+      // ─ DB durumu (sidebar'da Backend rozeti yaninda gosterilebilir) ─
+      dbActive = d.dbReady === true;
+
       // ─ Chart ─
-      if (Array.isArray(d.history)) drawChart(d.history);
+      // DB aktifse grafik kaynagi loadHistory (uzun gecmis); RAM history
+      // ile ezme. DB yoksa canli RAM verisini (son 60) ciz.
+      if (!dbActive && Array.isArray(d.history)) drawChart(d.history);
     }
 
     // ── Algorithm Panel ──────────────────────────────────
@@ -1764,6 +1770,41 @@
       }
     }
 
+    // ── Kalici Gecmis (Postgres DB) ──────────────────────
+    // Sayfa acilisinda bir kez cagrilir: DB varsa uzun gecmisi
+    // grafige ve karar zaman cizelgesine yukler. DB yoksa sessizce
+    // gecilir; canli RAM verisi (son 60) yine de poll ile gelir.
+    async function loadHistory() {
+      try {
+        const r = await fetch(BACKEND + '/history?readings=300&decisions=20', { cache: 'no-store' });
+        if (!r.ok) return;
+        const h = await r.json();
+        if (!h.dbReady) return;
+
+        // Grafik: DB olcumleri (eskiden yeniye geliyor)
+        if (Array.isArray(h.readings) && h.readings.length >= 2) {
+          drawChart(h.readings.map(p => ({
+            t: p.ts,
+            soilMoisture: p.soil_moisture,
+            humidity: p.humidity,
+            temperature: p.temperature,
+          })));
+        }
+
+        // Timeline: DB kararlari (en yeni ustte geliyor)
+        if (Array.isArray(h.decisions) && h.decisions.length) {
+          decisionLog = h.decisions.map(e => ({
+            time: new Date(e.ts),
+            label: e.decision_label,
+            duration: e.pump_duration_seconds || 0,
+            prob: e.on_probability,
+          })).slice(0, 8);
+          lastLoggedLabel = decisionLog[0]?.label ?? null;
+          renderTimeline();
+        }
+      } catch { /* DB yoksa/ulasilamazsa sessiz gec */ }
+    }
+
     // ── Command ──────────────────────────────────────────
     async function sendCommand(cmd) {
       try {
@@ -1785,8 +1826,11 @@
     // ── Init ─────────────────────────────────────────────
     lucide.createIcons();
     initChart();
+    loadHistory();   // DB varsa uzun gecmisi yukle (canli poll uzerine biner)
     poll();
     setInterval(poll, POLL_MS);
+    // DB aktifse uzun gecmis grafigini periyodik tazele (30 sn).
+    setInterval(() => { if (dbActive) loadHistory(); }, 30000);
   </script>
 
 </body>
