@@ -1851,7 +1851,16 @@
 
         // Timeline: DB kararlari (en yeni ustte geliyor)
         if (Array.isArray(h.decisions) && h.decisions.length) {
-          decisionLog = h.decisions.map(e => ({
+          const filteredDB = [];
+          for (let i = 0; i < h.decisions.length; i++) {
+            const current = h.decisions[i];
+            const older = h.decisions[i + 1];
+            if (!older || current.decision_label !== older.decision_label) {
+              filteredDB.push(current);
+            }
+          }
+          
+          decisionLog = filteredDB.map(e => ({
             time: new Date(e.ts),
             label: e.decision_label,
             duration: e.pump_duration_seconds || 0,
