@@ -1292,12 +1292,19 @@
     </div>
 
     <div class="chart-panel" style="margin-top: 24px;">
-      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div><i data-lucide="history"></i> Son 2.5 Saat (Geçmiş)</div>
         <button class="ctrl-btn" id="btnDownload2h" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2);">
           <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> CSV İndir
         </button>
       </div>
+
+      <div class="chart-stats" style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.75rem; color: var(--text-2); margin-bottom: 16px; background: rgba(34,197,94,0.03); padding: 10px 16px; border-radius: 8px; border: 1px dashed rgba(34,197,94,0.2);">
+         <div><strong style="color: #3B82F6">Toprak Nemi:</strong> Ort: <span id="statSoilMean" style="color:var(--text-1); font-weight:600">—</span>% <span style="margin:0 4px; opacity:0.3">|</span> Std Sapma: <span id="statSoilStd" style="color:var(--text-1); font-weight:600">—</span></div>
+         <div><strong style="color: #22C55E">Hava Nemi:</strong> Ort: <span id="statHumMean" style="color:var(--text-1); font-weight:600">—</span>% <span style="margin:0 4px; opacity:0.3">|</span> Std Sapma: <span id="statHumStd" style="color:var(--text-1); font-weight:600">—</span></div>
+         <div><strong style="color: #F59E0B">Sıcaklık:</strong> Ort: <span id="statTempMean" style="color:var(--text-1); font-weight:600">—</span>°C <span style="margin:0 4px; opacity:0.3">|</span> Std Sapma: <span id="statTempStd" style="color:var(--text-1); font-weight:600">—</span></div>
+      </div>
+
       <div class="chart-container">
         <canvas id="historyChart"></canvas>
       </div>
@@ -1595,6 +1602,7 @@
         data2h = d.history;
         drawChart(mainChart, d.history);
         drawChart(longChart, d.history);
+        updateStats(d.history);
       }
     }
 
@@ -1845,6 +1853,29 @@
       chartObj.update('none');
     }
 
+    function updateStats(dataArray) {
+      if (!dataArray || dataArray.length === 0) return;
+      
+      const calc = (key) => {
+        const vals = dataArray.map(d => Number(d[key] || d[key.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`)] || 0));
+        if (vals.length === 0) return { mean: '0.0', std: '0.00' };
+        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const variance = vals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / vals.length;
+        return { mean: mean.toFixed(1), std: Math.sqrt(variance).toFixed(2) };
+      };
+
+      const soil = calc('soilMoisture');
+      const temp = calc('temperature');
+      const hum = calc('humidity');
+
+      $('statSoilMean').textContent = soil.mean;
+      $('statSoilStd').textContent = soil.std;
+      $('statTempMean').textContent = temp.mean;
+      $('statTempStd').textContent = temp.std;
+      $('statHumMean').textContent = hum.mean;
+      $('statHumStd').textContent = hum.std;
+    }
+
     // ── Poll ─────────────────────────────────────────────
     async function poll() {
       try {
@@ -1888,6 +1919,7 @@
           const downsampled = formatted.filter((_, i) => i % 10 === 0);
           data2h = downsampled;
           drawChart(longChart, data2h);
+          updateStats(data2h);
         }
 
         // Timeline: DB kararlari (en yeni ustte geliyor)
