@@ -1784,9 +1784,22 @@
               labels: {
                 color: '#7A9B8A',
                 font: { family: 'Space Grotesk', size: 11, weight: '500' },
-                boxWidth: 12,
-                boxHeight: 2,
+                usePointStyle: true,
                 padding: 16,
+                generateLabels: (chart) => {
+                  const defaultLabels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                  defaultLabels.forEach(l => {
+                    if (l.text === 'Pompa Çalıştı') {
+                      l.pointStyle = 'circle';
+                      l.fillStyle = '#3B82F6';
+                      l.strokeStyle = 'transparent';
+                    } else {
+                      l.pointStyle = 'line';
+                      l.lineWidth = 3;
+                    }
+                  });
+                  return defaultLabels;
+                }
               }
             },
             tooltip: {
