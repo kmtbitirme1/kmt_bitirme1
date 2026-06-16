@@ -24,11 +24,10 @@ services:
     envVars:
       - key: INGEST_TOKEN
         generateValue: true   # Render rastgele bir token uretir; ESP32'ye ayni degeri yaz
+      # NOT: fromService + property:hostport ic ag adresi (akilli-tarim-algo:10000)
+      # dondurup DNS hatasina yol acti. Sabit dis URL kullaniyoruz.
       - key: ALGO_URL
-        fromService:
-          name: akilli-tarim-algo
-          type: web
-          property: hostport   # https://<algo-servis>.onrender.com olarak gelir
+        value: https://akilli-tarim-algo.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: akilli-tarim-db
