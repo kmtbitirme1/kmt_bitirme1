@@ -22,8 +22,9 @@ services:
     buildCommand: npm install
     startCommand: npm start
     envVars:
-      - key: INGEST_TOKEN
-        generateValue: true   # Render rastgele bir token uretir; ESP32'ye ayni degeri yaz
+      # NOT: INGEST_TOKEN kaldirildi. ESP32 kodu token gondermiyor; token set
+      # olunca /ingest 401 doner ve sensor verisi reddedilir. Prototip icin
+      # token kullanilmiyor. Ileride ESP32'ye x-token header eklenirse acilir.
       # NOT: fromService + property:hostport ic ag adresi (akilli-tarim-algo:10000)
       # dondurup DNS hatasina yol acti. Sabit dis URL kullaniyoruz.
       - key: ALGO_URL
