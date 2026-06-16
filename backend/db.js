@@ -19,6 +19,7 @@ const DATABASE_URL = process.env.DATABASE_URL || "";
 
 let pool = null;
 let ready = false;
+let lastError = null;   // son init/baglanti hatasi (debug icin)
 
 // Render Postgres TLS ister; self-signed oldugu icin rejectUnauthorized=false.
 if (DATABASE_URL) {
@@ -73,16 +74,43 @@ export async function initDb() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings (ts);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions (ts);`);
     ready = true;
+    lastError = null;
     console.log("[DB] Postgres baglandi, tablolar hazir.");
     return true;
   } catch (e) {
-    console.warn(`[DB] init hatasi: ${e.message} — RAM moduna dusuldu.`);
+    lastError = `${e.code ? e.code + ": " : ""}${e.message}`;
+    console.warn(`[DB] init hatasi: ${lastError} — RAM moduna dusuldu.`);
     return false;
   }
 }
 
 export function dbReady() {
   return ready;
+}
+
+// ── DEBUG: DB durum teshisi ───────────────────────────────────
+export async function dbDiagnostics() {
+  const urlSet = !!DATABASE_URL;
+  // URL'i sizdirma; sadece host kismini goster.
+  let host = null;
+  try { host = urlSet ? new URL(DATABASE_URL).host : null; } catch { host = "parse-error"; }
+
+  const diag = { urlSet, host, ready, lastError };
+  if (!pool) return diag;
+
+  // Canli ping dene.
+  try {
+    const { rows } = await pool.query("SELECT now() AS ts");
+    diag.ping = "ok";
+    diag.serverTime = rows[0].ts;
+    if (!ready) {            // pool var ama init basarisizdi -> tekrar dene
+      await initDb();
+      diag.reinit = ready;
+    }
+  } catch (e) {
+    diag.ping = `${e.code ? e.code + ": " : ""}${e.message}`;
+  }
+  return diag;
 }
 
 // ── Bir olcumu kaydet ─────────────────────────────────────────

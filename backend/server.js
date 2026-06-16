@@ -26,6 +26,7 @@ import {
   insertDecision,
   recentReadings,
   recentDecisions,
+  dbDiagnostics,
 } from "./db.js";
 
 const app = express();
@@ -234,6 +235,11 @@ app.get("/debug/algo", async (_req, res) => {
     fetchError,               // dolu ise Node fetch patladi (asil sebep burada)
     body: body ? body.slice(0, 500) : null,
   });
+});
+
+// ── DEBUG: DB baglanti durumu ─────────────────────────────────
+app.get("/debug/db", async (_req, res) => {
+  res.json(await dbDiagnostics());
 });
 
 // ── ESP32 -> backend: veri yaz ────────────────────────────────
