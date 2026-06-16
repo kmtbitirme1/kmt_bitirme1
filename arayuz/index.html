@@ -613,6 +613,52 @@
     
     .weather-icon.rainy { background: rgba(239, 68, 68, 0.15); }
     .weather-icon.rainy i { color: var(--red); }
+
+    /* ── Details Panel ────────────────────────────────── */
+    .details-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px dashed var(--border);
+      color: var(--text-2);
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 12px;
+      border-radius: var(--radius);
+      margin-top: 16px;
+      margin-bottom: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .details-btn:hover {
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+    .details-panel {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.3s ease;
+    }
+    .details-panel.open {
+      grid-template-rows: 1fr;
+    }
+    .details-inner {
+      overflow: hidden;
+    }
+    .details-split {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 24px;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .details-split { grid-template-columns: 1fr; }
+    }
     
     .weather-info {
       display: flex;
@@ -1053,24 +1099,16 @@
         </div>
       </div>
 
-      <!-- Hava Nemi Gauge -->
-      <div class="gauge-card" id="cardNem">
-        <div class="gauge-header"><i data-lucide="cloud"></i><span>Hava Nemi</span></div>
-        <div class="gauge-wrap">
-          <svg viewBox="0 0 200 200" class="gauge-svg">
-            <circle class="gauge-track" cx="100" cy="100" r="70"
-                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
-            <circle class="gauge-fill" cx="100" cy="100" r="70" id="nemFill"
-                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
-                    transform="rotate(135 100 100)"/>
-          </svg>
-          <div class="gauge-center">
-            <span class="gauge-num" id="nemVal">—</span>
-            <div class="gauge-unit">%</div>
-          </div>
+      <!-- Pompa Card -->
+      <div class="gauge-card pump-card" id="cardPump">
+        <div class="gauge-header"><i data-lucide="power"></i><span>Pompa</span></div>
+        <div class="pump-ring" id="pumpRing">
+          <i data-lucide="droplets"></i>
         </div>
-        <div class="gauge-footer">
-          <span class="gauge-status wait" id="nemStatus">Bekleniyor</span>
+        <div class="pump-val" id="pumpVal">—</div>
+        <div class="pump-mode" id="pumpMode">—</div>
+        <div class="gauge-footer" style="margin-top:8px">
+          <span class="gauge-status wait" id="pumpStatus">Bekleniyor</span>
         </div>
       </div>
 
@@ -1079,11 +1117,8 @@
         <div class="gauge-header"><i data-lucide="thermometer"></i><span>Sıcaklık</span></div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 200 200" class="gauge-svg">
-            <circle class="gauge-track" cx="100" cy="100" r="70"
-                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
-            <circle class="gauge-fill" cx="100" cy="100" r="70" id="tempFill"
-                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
-                    transform="rotate(135 100 100)"/>
+            <circle class="gauge-track" cx="100" cy="100" r="70" stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+            <circle class="gauge-fill" cx="100" cy="100" r="70" id="tempFill" stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87" transform="rotate(135 100 100)"/>
           </svg>
           <div class="gauge-center">
             <span class="gauge-num" id="tempVal">—</span>
@@ -1092,27 +1127,6 @@
         </div>
         <div class="gauge-footer">
           <span class="gauge-status wait" id="tempStatus">Bekleniyor</span>
-        </div>
-      </div>
-
-      <!-- Basınç Gauge -->
-      <div class="gauge-card" id="cardPress">
-        <div class="gauge-header"><i data-lucide="gauge"></i><span>Basınç</span></div>
-        <div class="gauge-wrap">
-          <svg viewBox="0 0 200 200" class="gauge-svg">
-            <circle class="gauge-track" cx="100" cy="100" r="70"
-                    stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
-            <circle class="gauge-fill" cx="100" cy="100" r="70" id="pressFill"
-                    stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87"
-                    transform="rotate(135 100 100)"/>
-          </svg>
-          <div class="gauge-center">
-            <span class="gauge-num" id="pressVal">—</span>
-            <div class="gauge-unit" style="font-size:12px; margin-top:2px;">hPa</div>
-          </div>
-        </div>
-        <div class="gauge-footer">
-          <span class="gauge-status wait" id="pressStatus">Bekleniyor</span>
         </div>
       </div>
 
@@ -1129,20 +1143,74 @@
         </div>
       </div>
 
-      <!-- Pompa Card -->
-      <div class="gauge-card pump-card" id="cardPump">
-        <div class="gauge-header"><i data-lucide="power"></i><span>Pompa</span></div>
-        <div class="pump-ring" id="pumpRing">
-          <i data-lucide="droplets"></i>
-        </div>
-        <div class="pump-val" id="pumpVal">—</div>
-        <div class="pump-mode" id="pumpMode">—</div>
-        <div class="gauge-footer" style="margin-top:8px">
-          <span class="gauge-status wait" id="pumpStatus">Bekleniyor</span>
-        </div>
-      </div>
-
     </div>
+
+    <!-- Details Expander -->
+    <button class="details-btn" id="btnToggleDetails">
+      <span id="txtToggleDetails">Detaylı Veriler</span> <i data-lucide="chevron-down" id="iconDetails"></i>
+    </button>
+
+    <div class="details-panel" id="panelDetails">
+      <div class="details-inner">
+        
+        <div class="details-split">
+          <!-- Sol Kısım: Diğer Sensörler -->
+          <div>
+            <div class="section-title" style="margin-bottom: 12px;"><i data-lucide="microchip"></i> Diğer Sensörler</div>
+            <div class="gauge-grid" style="grid-template-columns: 1fr 1fr;">
+              <!-- Hava Nemi Gauge -->
+              <div class="gauge-card" id="cardNem">
+                <div class="gauge-header"><i data-lucide="cloud"></i><span>Hava Nemi</span></div>
+                <div class="gauge-wrap">
+                  <svg viewBox="0 0 200 200" class="gauge-svg">
+                    <circle class="gauge-track" cx="100" cy="100" r="70" stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+                    <circle class="gauge-fill" cx="100" cy="100" r="70" id="nemFill" stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87" transform="rotate(135 100 100)"/>
+                  </svg>
+                  <div class="gauge-center">
+                    <span class="gauge-num" id="nemVal">—</span>
+                    <div class="gauge-unit">%</div>
+                  </div>
+                </div>
+                <div class="gauge-footer">
+                  <span class="gauge-status wait" id="nemStatus">Bekleniyor</span>
+                </div>
+              </div>
+
+              <!-- Basınç Gauge -->
+              <div class="gauge-card" id="cardPress">
+                <div class="gauge-header"><i data-lucide="gauge"></i><span>Basınç</span></div>
+                <div class="gauge-wrap">
+                  <svg viewBox="0 0 200 200" class="gauge-svg">
+                    <circle class="gauge-track" cx="100" cy="100" r="70" stroke-dasharray="329.87 109.96" transform="rotate(135 100 100)"/>
+                    <circle class="gauge-fill" cx="100" cy="100" r="70" id="pressFill" stroke-dasharray="329.87 109.96" stroke-dashoffset="329.87" transform="rotate(135 100 100)"/>
+                  </svg>
+                  <div class="gauge-center">
+                    <span class="gauge-num" id="pressVal">—</span>
+                    <div class="gauge-unit" style="font-size:12px; margin-top:2px;">hPa</div>
+                  </div>
+                </div>
+                <div class="gauge-footer">
+                  <span class="gauge-status wait" id="pressStatus">Bekleniyor</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Hava Durumu -->
+          <div>
+            <div class="section-title" style="margin-bottom: 12px;"><i data-lucide="cloud-sun"></i> Hava Durumu Tahmini (Barometrik)</div>
+            <div class="weather-panel" id="weatherPanel" style="height: auto; min-height: 140px; margin-bottom: 0;">
+              <div class="weather-icon" id="weatherIcon"><i data-lucide="cloud"></i></div>
+              <div class="weather-info">
+                <div class="w-status" id="weatherStatus">Bekleniyor...</div>
+                <div class="w-desc" id="weatherDesc">Sistemden yeterli basınç verisi bekleniyor. Algoritma bu tahmine göre sulama kararını optimize edebilir.</div>
+              </div>
+            </div>
+          </div>
+        </div> <!-- End of details-split -->
+
+      </div> <!-- End of details-inner -->
+    </div> <!-- End of details-panel -->
 
     <!-- Algorithm Decision Panel -->
     <div class="section-title"><i data-lucide="brain"></i> Algoritma Kararı</div>
@@ -1163,16 +1231,6 @@
         </div>
       </div>
       <div class="decision-reason" id="reasonBox">Algoritma kararı bekleniyor…</div>
-    </div>
-
-    <!-- Weather Prediction Panel -->
-    <div class="section-title"><i data-lucide="cloud-sun"></i> Hava Durumu Tahmini (Barometrik)</div>
-    <div class="weather-panel" id="weatherPanel">
-      <div class="weather-icon" id="weatherIcon"><i data-lucide="cloud"></i></div>
-      <div class="weather-info">
-        <div class="w-status" id="weatherStatus">Bekleniyor...</div>
-        <div class="w-desc" id="weatherDesc">Sistemden yeterli basınç verisi bekleniyor. Algoritma bu tahmine göre sulama kararını optimize edebilir.</div>
-      </div>
     </div>
 
     <!-- Controls + Timeline -->
@@ -1267,6 +1325,23 @@
     $('sidebarOverlay').addEventListener('click', () => {
       $('sidebar').classList.remove('open');
       $('sidebarOverlay').classList.remove('show');
+    });
+
+    // ── Details Expander ─────────────────────────────────
+    $('btnToggleDetails').addEventListener('click', () => {
+      const panel = $('panelDetails');
+      const icon = $('iconDetails');
+      const txt = $('txtToggleDetails');
+      
+      panel.classList.toggle('open');
+      if (panel.classList.contains('open')) {
+        txt.textContent = 'Gizle';
+        icon.setAttribute('data-lucide', 'chevron-up');
+      } else {
+        txt.textContent = 'Detaylı Veriler';
+        icon.setAttribute('data-lucide', 'chevron-down');
+      }
+      lucide.createIcons(); // refresh icon
     });
 
     // ── Settings Modal Toggle ────────────────────────────
