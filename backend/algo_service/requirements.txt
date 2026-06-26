@@ -1,5 +1,8 @@
 flask>=3.0
 gunicorn>=21.0
+# Adaptif controller durumunu Render Postgres'te kalıcı tutmak için (state_store.py).
+# DATABASE_URL yoksa kullanılmaz; servis RAM moduna düşer (graceful degrade).
+psycopg[binary,pool]>=3.1
 # Performans değerlendirme için (evaluate_algorithm_performance.py):
 pandas>=2.0
 scikit-learn>=1.3

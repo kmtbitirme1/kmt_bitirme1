@@ -6,18 +6,26 @@ Bu dosya tek başına çalışır. Ayrı bir Logistic Regression model dosyası 
 Model katsayıları, ölçekleme değerleri ve karar eşiği doğrudan bu dosyanın içine gömülüdür.
 
 Algoritma iki katmandan oluşur:
-1. Karar katmanı: Sensör verilerinden ON olasılığı hesaplanır ve 0.40 karar eşiğiyle sulama kararı verilir.
+1. Karar katmanı: Sensör verilerinden ON olasılığı hesaplanır ve karar eşiğiyle sulama kararı verilir.
 2. Optimizasyon katmanı: Sulama gerekiyorsa nem açığına göre pompa çalışma süresi hesaplanır.
+
+Ek olarak bu sürümde adaptif kontrol katmanı bulunmaktadır.
+Gerçek sistemde ana kullanım AdaptiveIrrigationController sınıfıdır.
+Bu katman, karar eşiğini belirli gözlem aralıkları sonunda gerçek hedef nem sapmasına göre günceller.
+predict_irrigation fonksiyonu tekil ölçüm/test amaçlı yardımcı fonksiyon olarak korunmuştur.
 
 Bu dosya arkadaşlara verilecek ana algoritma dosyasıdır.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Dict, Mapping
+from pathlib import Path
+import csv
 import json
 import math
+from datetime import datetime
 
 
 # ============================================================
@@ -130,6 +138,56 @@ class IrrigationConfig:
         if self.min_pump_duration_seconds > self.max_pump_duration_seconds:
             raise ValueError("min_pump_duration_seconds max_pump_duration_seconds değerinden büyük olamaz.")
 
+
+
+
+@dataclass(frozen=True)
+class AdaptiveThresholdConfig:
+    """Karar eşiğinin gerçek sistem geri bildirimiyle güncellenmesi için ayarlar."""
+
+    # Eşik güncellemesi yapılmadan önce aynı eşikle değerlendirilecek gözlem sayısı.
+    update_window_size: int = 600
+
+    # Hedef nemden sapma oranı bu değerin üzerindeyse iki kademe güncelleme yapılır.
+    large_deviation_percent: float = 10.0
+
+    # Küçük ve büyük güncelleme adımları.
+    small_threshold_step: float = 0.01
+    large_threshold_step: float = 0.02
+
+    # Karar eşiğinin güvenli sınırları.
+    min_decision_threshold: float = 0.20
+    max_decision_threshold: float = 0.70
+
+    # Toprak nemi 0 veya 100 değerini art arda bu kadar kez üretirse uyarı aktif olur.
+    extreme_moisture_warning_count: int = 10
+
+    def validate(self) -> None:
+        if self.update_window_size <= 0:
+            raise ValueError("update_window_size pozitif olmalıdır.")
+        if self.large_deviation_percent <= 0:
+            raise ValueError("large_deviation_percent pozitif olmalıdır.")
+        if self.small_threshold_step <= 0:
+            raise ValueError("small_threshold_step pozitif olmalıdır.")
+        if self.large_threshold_step <= 0:
+            raise ValueError("large_threshold_step pozitif olmalıdır.")
+        if self.small_threshold_step > self.large_threshold_step:
+            raise ValueError("small_threshold_step, large_threshold_step değerinden büyük olamaz.")
+        if not 0 < self.min_decision_threshold < self.max_decision_threshold < 1:
+            raise ValueError("Karar eşiği sınırları 0 ile 1 arasında ve sıralı olmalıdır.")
+        if self.extreme_moisture_warning_count <= 0:
+            raise ValueError("extreme_moisture_warning_count pozitif olmalıdır.")
+
+
+@dataclass
+class AdaptiveIrrigationState:
+    """Adaptif eşik ve sensör uyarısı için çalışma zamanı durumu."""
+
+    current_decision_threshold: float = 0.40
+    window_soil_moisture_values: list[float] = field(default_factory=list)
+    consecutive_extreme_value: float | None = None
+    consecutive_extreme_count: int = 0
+    last_threshold_update: Dict[str, Any] | None = None
 
 # ============================================================
 # 4. YARDIMCI FONKSİYONLAR
@@ -411,19 +469,367 @@ def predict_irrigation(
     }
 
 
+
 # ============================================================
-# 8. ÖRNEK ÇALIŞTIRMA
+# 8. ADAPTİF EŞİK GÜNCELLEME KATMANI
+# ============================================================
+
+class AdaptiveIrrigationController:
+    """
+    Gerçek sistemde ardışık ölçümler için kullanılacak adaptif kontrol katmanı.
+
+    Bu sınıf predict_irrigation fonksiyonunun temel karar mantığını değiştirmez.
+    Yalnızca karar eşiğini belirli gözlem pencereleri sonunda hedef nem sapmasına göre
+    günceller ve 0/100 toprak nemi tekrarları için uyarı bilgisi üretir.
+    """
+
+    def __init__(
+        self,
+        config: IrrigationConfig | None = None,
+        adaptive_config: AdaptiveThresholdConfig | None = None,
+        state: AdaptiveIrrigationState | None = None,
+    ) -> None:
+        self.config = config or IrrigationConfig()
+        self.adaptive_config = adaptive_config or AdaptiveThresholdConfig()
+        self.state = state or AdaptiveIrrigationState(
+            current_decision_threshold=self.config.decision_threshold
+        )
+        self.config.validate()
+        self.adaptive_config.validate()
+        if not self.adaptive_config.min_decision_threshold <= self.state.current_decision_threshold <= self.adaptive_config.max_decision_threshold:
+            raise ValueError("current_decision_threshold adaptif eşik sınırlarının dışında olamaz.")
+
+    def predict(self, sensor_data: Mapping[str, Any]) -> Dict[str, Any]:
+        """
+        Tek bir sensör ölçümü için karar üretir, kalite uyarısını günceller ve
+        gerekirse bir sonraki pencere için karar eşiğini günceller.
+        """
+        threshold_used = self.state.current_decision_threshold
+        runtime_config = replace(self.config, decision_threshold=threshold_used)
+
+        result = predict_irrigation(sensor_data=sensor_data, config=runtime_config)
+        soil_moisture = float(result["model_input"]["Soil_Moisture"])
+
+        sensor_quality = self._update_sensor_quality_warning(soil_moisture)
+        threshold_update = self._record_observation_and_update_threshold(soil_moisture)
+
+        result["sensor_quality"] = sensor_quality
+        result["adaptive_threshold"] = {
+            "threshold_used_for_this_decision": round(threshold_used, 4),
+            "current_threshold_for_next_decision": round(self.state.current_decision_threshold, 4),
+            "window_size": self.adaptive_config.update_window_size,
+            "observations_in_current_window": len(self.state.window_soil_moisture_values),
+            "threshold_update_applied_after_this_observation": threshold_update["updated"],
+            "last_threshold_update": self.state.last_threshold_update,
+        }
+        return result
+
+    def process_measurement(self, sensor_data: Mapping[str, Any]) -> Dict[str, Any]:
+        """
+        Gerçek sistem entegrasyonu için predict metoduyla aynı işi yapan okunabilir alias.
+        Her yeni sensör ölçümü bu metoda gönderilebilir.
+        """
+        return self.predict(sensor_data)
+
+    def get_state_dict(self) -> Dict[str, Any]:
+        """
+        Adaptif sistem durumunu dışarı aktarır.
+
+        Backend bu çıktıyı veritabanında saklayabilir. Böylece uygulama yeniden
+        başlatıldığında karar eşiği, pencere ölçümleri ve sensör uyarı sayaçları
+        sıfırlanmadan devam edebilir.
+        """
+        return asdict(self.state)
+
+    def load_state_dict(self, state_dict: Mapping[str, Any]) -> None:
+        """
+        Daha önce kaydedilmiş adaptif sistem durumunu geri yükler.
+        """
+        current_threshold = float(
+            state_dict.get(
+                "current_decision_threshold",
+                self.config.decision_threshold,
+            )
+        )
+        if not self.adaptive_config.min_decision_threshold <= current_threshold <= self.adaptive_config.max_decision_threshold:
+            raise ValueError("Kaydedilmiş current_decision_threshold adaptif eşik sınırlarının dışında.")
+
+        window_values_raw = state_dict.get("window_soil_moisture_values", []) or []
+        window_values = [float(value) for value in window_values_raw]
+
+        consecutive_value = state_dict.get("consecutive_extreme_value", None)
+        if consecutive_value is not None:
+            consecutive_value = float(consecutive_value)
+
+        self.state = AdaptiveIrrigationState(
+            current_decision_threshold=current_threshold,
+            window_soil_moisture_values=window_values,
+            consecutive_extreme_value=consecutive_value,
+            consecutive_extreme_count=int(state_dict.get("consecutive_extreme_count", 0) or 0),
+            last_threshold_update=state_dict.get("last_threshold_update", None),
+        )
+
+    def _record_observation_and_update_threshold(self, soil_moisture: float) -> Dict[str, Any]:
+        self.state.window_soil_moisture_values.append(soil_moisture)
+
+        if len(self.state.window_soil_moisture_values) < self.adaptive_config.update_window_size:
+            return {"updated": False, "reason": "Gözlem penceresi henüz tamamlanmadı."}
+
+        values = self.state.window_soil_moisture_values
+        average_soil_moisture = sum(values) / len(values)
+        target = self.config.target_soil_moisture
+        deviation = average_soil_moisture - target
+        deviation_percent = abs(deviation) / target * 100 if target != 0 else 0.0
+
+        old_threshold = self.state.current_decision_threshold
+        if deviation == 0:
+            step = 0.0
+        elif deviation_percent > self.adaptive_config.large_deviation_percent:
+            step = self.adaptive_config.large_threshold_step
+        else:
+            step = self.adaptive_config.small_threshold_step
+
+        if deviation > 0:
+            direction = "increase"
+            reason = "Ortalama nem hedef nemin üstünde kaldı; daha seçici sulama için eşik artırıldı."
+            new_threshold = old_threshold + step
+        elif deviation < 0:
+            direction = "decrease"
+            reason = "Ortalama nem hedef nemin altında kaldı; daha kolay sulama kararı için eşik azaltıldı."
+            new_threshold = old_threshold - step
+        else:
+            direction = "unchanged"
+            reason = "Ortalama nem hedef neme eşit olduğu için eşik değiştirilmedi."
+            new_threshold = old_threshold
+
+        new_threshold = _clamp(
+            new_threshold,
+            self.adaptive_config.min_decision_threshold,
+            self.adaptive_config.max_decision_threshold,
+        )
+        self.state.current_decision_threshold = round(new_threshold, 4)
+        actual_threshold_change = abs(self.state.current_decision_threshold - round(old_threshold, 4)) > 1e-9
+
+        if step > 0 and not actual_threshold_change:
+            reason = (
+                reason + 
+                " Ancak karar eşiği güvenli alt/üst sınırda olduğu için değer değişmedi."
+            )
+
+        update_record: Dict[str, Any] = {
+            "updated": actual_threshold_change,
+            "direction": direction,
+            "old_threshold": round(old_threshold, 4),
+            "new_threshold": round(self.state.current_decision_threshold, 4),
+            "average_soil_moisture": round(average_soil_moisture, 4),
+            "target_soil_moisture": round(target, 4),
+            "deviation": round(deviation, 4),
+            "deviation_percent": round(deviation_percent, 4),
+            "step": round(step, 4),
+            "reason": reason,
+            "window_size": len(values),
+        }
+        self.state.last_threshold_update = update_record
+        self.state.window_soil_moisture_values = []
+        return update_record
+
+    def _update_sensor_quality_warning(self, soil_moisture: float) -> Dict[str, Any]:
+        is_extreme = soil_moisture in (0.0, 100.0)
+
+        if is_extreme:
+            if self.state.consecutive_extreme_value == soil_moisture:
+                self.state.consecutive_extreme_count += 1
+            else:
+                self.state.consecutive_extreme_value = soil_moisture
+                self.state.consecutive_extreme_count = 1
+        else:
+            self.state.consecutive_extreme_value = None
+            self.state.consecutive_extreme_count = 0
+
+        warning_active = (
+            self.state.consecutive_extreme_count
+            >= self.adaptive_config.extreme_moisture_warning_count
+        )
+
+        message = None
+        if warning_active:
+            message = (
+                f"Son {self.state.consecutive_extreme_count} gözlemde toprak nemi "
+                f"{soil_moisture:.0f} olarak ölçülüyor. Daha güvenli sonuçlar için "
+                "toprak nem sensörünün bağlantı ve kalibrasyon durumunun kontrol edilmesi önerilir."
+            )
+
+        return {
+            "warning_active": warning_active,
+            "warning_type": "consecutive_extreme_soil_moisture" if warning_active else None,
+            "message": message,
+            "consecutive_extreme_value": self.state.consecutive_extreme_value,
+            "consecutive_extreme_count": self.state.consecutive_extreme_count,
+            "note": "Bu uyarı yalnızca bilgilendirme amaçlıdır; sulama kararını değiştirmez.",
+        }
+
+
+
+# ============================================================
+# 9. LOG KAYDI VE GERÇEK SİSTEM PERFORMANSI İÇİN YARDIMCI FONKSİYONLAR
+# ============================================================
+
+LOG_FIELDNAMES = [
+    "timestamp",
+    "measurement_id",
+    "soil_moisture",
+    "temperature",
+    "air_humidity_pct",
+    "pressure_kpa",
+    "light_lux",
+    "last_irrigation_minutes_ago",
+    "target_soil_moisture",
+    "target_deviation",
+    "absolute_target_deviation",
+    "target_status",
+    "on_probability",
+    "decision_threshold_used",
+    "decision_threshold_next",
+    "irrigation_required",
+    "decision_label",
+    "pump_duration_seconds",
+    "moisture_deficit",
+    "decision_reason",
+    "window_size",
+    "observations_in_current_window",
+    "threshold_update_applied",
+    "threshold_update_direction",
+    "threshold_old",
+    "threshold_new",
+    "threshold_window_average_soil_moisture",
+    "threshold_window_deviation_percent",
+    "sensor_quality_warning_active",
+    "sensor_quality_warning_type",
+    "sensor_quality_message",
+    "consecutive_extreme_count",
+]
+
+
+def build_log_record(
+    result: Mapping[str, Any],
+    timestamp: str | None = None,
+    measurement_id: int | str | None = None,
+) -> Dict[str, Any]:
+    """
+    Algoritma çıktısını CSV/veritabanı için düz bir performans log kaydına dönüştürür.
+
+    Bu fonksiyon karar mantığını değiştirmez. Yalnızca gerçek sistem performansının
+    sonradan hesaplanabilmesi için gerekli alanları tek satırlık kayıt haline getirir.
+    Backend tarafı her ölçümden sonra bu kaydı veritabanına veya CSV dosyasına yazabilir.
+    """
+    model_input = result.get("model_input", {}) or {}
+    operational_inputs = result.get("operational_inputs", {}) or {}
+    config = result.get("config", {}) or {}
+    adaptive_threshold = result.get("adaptive_threshold", {}) or {}
+    sensor_quality = result.get("sensor_quality", {}) or {}
+    last_update = adaptive_threshold.get("last_threshold_update") or {}
+
+    soil_moisture = float(model_input.get("Soil_Moisture", 0.0))
+    target = float(config.get("target_soil_moisture", 55.0))
+    target_deviation = soil_moisture - target
+    absolute_target_deviation = abs(target_deviation)
+
+    if target_deviation < 0:
+        target_status = "below_target"
+    elif target_deviation > 0:
+        target_status = "above_target"
+    else:
+        target_status = "on_target"
+
+    threshold_update_applied = bool(
+        adaptive_threshold.get("threshold_update_applied_after_this_observation", False)
+    )
+
+    record: Dict[str, Any] = {
+        "timestamp": timestamp or datetime.now().isoformat(timespec="seconds"),
+        "measurement_id": measurement_id,
+        "soil_moisture": round(soil_moisture, 4),
+        "temperature": model_input.get("Temperature"),
+        "air_humidity_pct": model_input.get("Air_humidity_pct"),
+        "pressure_kpa": model_input.get("Pressure_KPa"),
+        "light_lux": operational_inputs.get("light_lux"),
+        "last_irrigation_minutes_ago": operational_inputs.get("last_irrigation_minutes_ago"),
+        "target_soil_moisture": round(target, 4),
+        "target_deviation": round(target_deviation, 4),
+        "absolute_target_deviation": round(absolute_target_deviation, 4),
+        "target_status": target_status,
+        "on_probability": result.get("on_probability"),
+        "decision_threshold_used": adaptive_threshold.get(
+            "threshold_used_for_this_decision", result.get("decision_threshold")
+        ),
+        "decision_threshold_next": adaptive_threshold.get(
+            "current_threshold_for_next_decision", result.get("decision_threshold")
+        ),
+        "irrigation_required": int(bool(result.get("irrigation_required", False))),
+        "decision_label": result.get("decision_label"),
+        "pump_duration_seconds": result.get("pump_duration_seconds"),
+        "moisture_deficit": result.get("moisture_deficit"),
+        "decision_reason": result.get("decision_reason"),
+        "window_size": adaptive_threshold.get("window_size"),
+        "observations_in_current_window": adaptive_threshold.get("observations_in_current_window"),
+        "threshold_update_applied": int(threshold_update_applied),
+        "threshold_update_direction": last_update.get("direction") if threshold_update_applied else None,
+        "threshold_old": last_update.get("old_threshold") if threshold_update_applied else None,
+        "threshold_new": last_update.get("new_threshold") if threshold_update_applied else None,
+        "threshold_window_average_soil_moisture": last_update.get("average_soil_moisture") if threshold_update_applied else None,
+        "threshold_window_deviation_percent": last_update.get("deviation_percent") if threshold_update_applied else None,
+        "sensor_quality_warning_active": int(bool(sensor_quality.get("warning_active", False))),
+        "sensor_quality_warning_type": sensor_quality.get("warning_type"),
+        "sensor_quality_message": sensor_quality.get("message"),
+        "consecutive_extreme_count": sensor_quality.get("consecutive_extreme_count"),
+    }
+    return record
+
+
+def append_log_record(csv_path: str | Path, record: Mapping[str, Any]) -> None:
+    """
+    Tek bir performans log kaydını CSV dosyasına ekler.
+
+    Dosya yoksa başlık satırıyla birlikte oluşturulur. Backend veritabanı kullanıyorsa
+    aynı alanlar tablo kolonları olarak da saklanabilir.
+    """
+    path = Path(csv_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = path.exists() and path.stat().st_size > 0
+
+    with path.open("a", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=LOG_FIELDNAMES, extrasaction="ignore")
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow({field: record.get(field) for field in LOG_FIELDNAMES})
+
+# ============================================================
+# 10. ÖRNEK ÇALIŞTIRMA
 # ============================================================
 
 if __name__ == "__main__":
-    sample_sensor_data = {
-        "soil_moisture": 35.0,
-        "temperature": 28.0,
-        "air_humidity_pct": 60.0,
-        "pressure_kpa": 101.2,
-        "light_lux": 450.0,
-        "last_irrigation_minutes_ago": 120.0,
-    }
+    # Doğrudan çalıştırıldığında adaptif kontrol katmanı gösterilir.
+    # Gerçek sistemde de aynı AdaptiveIrrigationController nesnesi ardışık ölçümlerde kullanılmalıdır.
+    controller = AdaptiveIrrigationController()
 
-    result = predict_irrigation(sample_sensor_data)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # Demo amacıyla 600 ölçümlük bir pencere oluşturulur.
+    # Ortalama nem hedef değer olan 55'in üstünde olduğu için 600. ölçüm sonunda eşik 0.01 artar.
+    last_result: Dict[str, Any] | None = None
+    for _ in range(controller.adaptive_config.update_window_size):
+        sample_sensor_data = {
+            "soil_moisture": 60.0,
+            "temperature": 28.0,
+            "air_humidity_pct": 60.0,
+            "pressure_kpa": 101.2,
+            "light_lux": 450.0,
+            "last_irrigation_minutes_ago": 120.0,
+        }
+        last_result = controller.process_measurement(sample_sensor_data)
+
+    demo_output = {
+        "demo_type": "adaptive_controller_600_observation_demo",
+        "note": "Bu çıktı, doğrudan çalıştırmada adaptif eşik güncelleme ve performans log katmanının kullanıldığını gösterir.",
+        "last_result_after_600_measurements": last_result,
+        "example_log_record": build_log_record(last_result, measurement_id=controller.adaptive_config.update_window_size),
+    }
+    print(json.dumps(demo_output, ensure_ascii=False, indent=2))

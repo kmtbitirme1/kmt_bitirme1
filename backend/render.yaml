@@ -42,3 +42,10 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     # Algoritma dosyasi ./algorithm/ altinda bundle'li; ekstra ALGO_DIR gerekmez.
+    envVars:
+      # Adaptif controller durumu (karar esigi + sensor uyari sayaclari) bu DB'de
+      # tek satirda tutulur; boylece gunicorn worker'lari ve Render restart'i
+      # arasinda kalici kalir. Node ile AYNI external Postgres URL'i.
+      # DATABASE_URL kaldirilirsa servis RAM moduna duser (kalici degil ama calisir).
+      - key: DATABASE_URL
+        value: postgresql://akilli_tarim_db_user:U5acN5uYpQMTjclcuL5zG9tlKc94FmT1@dpg-d8oo8ccm0tmc73cvod20-a.oregon-postgres.render.com/akilli_tarim_db

@@ -1,29 +1,93 @@
 {
-  "irrigation_required": true,
-  "decision_label": "ON",
-  "on_probability": 0.693398,
-  "decision_threshold": 0.4,
-  "pump_duration_seconds": 4.0,
-  "moisture_deficit": 20.0,
-  "decision_reason": "ON olasılığı 0.693, 0.40 karar eşiğinin üzerindedir. Nem açığı 20.00 olarak hesaplanmış ve pompa süresi 4.00 saniye belirlenmiştir.",
-  "model_input": {
-    "Soil_Moisture": 35.0,
-    "Temperature": 28.0,
-    "Air_humidity_pct": 60.0,
-    "Pressure_KPa": 101.2
-  },
-  "operational_inputs": {
-    "light_lux": 450.0,
-    "last_irrigation_minutes_ago": 120.0
-  },
-  "config": {
+  "example_result_after_600_measurements": {
+    "irrigation_required": false,
+    "decision_label": "OFF",
+    "on_probability": 0.517864,
     "decision_threshold": 0.4,
+    "pump_duration_seconds": 0.0,
+    "moisture_deficit": 0.0,
+    "decision_reason": "Model ON eğilimi göstermiştir ancak toprak nemi hedef değer olan 55.0 seviyesine ulaşmıştır.",
+    "model_input": {
+      "Soil_Moisture": 60.0,
+      "Temperature": 28.0,
+      "Air_humidity_pct": 60.0,
+      "Pressure_KPa": 101.2
+    },
+    "operational_inputs": {
+      "light_lux": null,
+      "last_irrigation_minutes_ago": 120.0
+    },
+    "config": {
+      "decision_threshold": 0.4,
+      "target_soil_moisture": 55.0,
+      "minimum_irrigation_interval_minutes": 30.0,
+      "seconds_per_moisture_point": 0.2,
+      "min_pump_duration_seconds": 1.0,
+      "max_pump_duration_seconds": 8.0,
+      "pump_flow_lph_min": 80.0,
+      "pump_flow_lph_max": 120.0
+    },
+    "sensor_quality": {
+      "warning_active": false,
+      "warning_type": null,
+      "message": null,
+      "consecutive_extreme_value": null,
+      "consecutive_extreme_count": 0,
+      "note": "Bu uyarı yalnızca bilgilendirme amaçlıdır; sulama kararını değiştirmez."
+    },
+    "adaptive_threshold": {
+      "threshold_used_for_this_decision": 0.4,
+      "current_threshold_for_next_decision": 0.41,
+      "window_size": 600,
+      "observations_in_current_window": 0,
+      "threshold_update_applied_after_this_observation": true,
+      "last_threshold_update": {
+        "updated": true,
+        "direction": "increase",
+        "old_threshold": 0.4,
+        "new_threshold": 0.41,
+        "average_soil_moisture": 60.0,
+        "target_soil_moisture": 55.0,
+        "deviation": 5.0,
+        "deviation_percent": 9.0909,
+        "step": 0.01,
+        "reason": "Ortalama nem hedef nemin üstünde kaldı; daha seçici sulama için eşik artırıldı.",
+        "window_size": 600
+      }
+    }
+  },
+  "example_log_record": {
+    "timestamp": "2026-06-13 10:30:00",
+    "measurement_id": 600,
+    "soil_moisture": 60.0,
+    "temperature": 28.0,
+    "air_humidity_pct": 60.0,
+    "pressure_kpa": 101.2,
+    "light_lux": null,
+    "last_irrigation_minutes_ago": 120.0,
     "target_soil_moisture": 55.0,
-    "minimum_irrigation_interval_minutes": 30.0,
-    "seconds_per_moisture_point": 0.2,
-    "min_pump_duration_seconds": 1.0,
-    "max_pump_duration_seconds": 8.0,
-    "pump_flow_lph_min": 80.0,
-    "pump_flow_lph_max": 120.0
+    "target_deviation": 5.0,
+    "absolute_target_deviation": 5.0,
+    "target_status": "above_target",
+    "on_probability": 0.517864,
+    "decision_threshold_used": 0.4,
+    "decision_threshold_next": 0.41,
+    "irrigation_required": 0,
+    "decision_label": "OFF",
+    "pump_duration_seconds": 0.0,
+    "moisture_deficit": 0.0,
+    "decision_reason": "Model ON eğilimi göstermiştir ancak toprak nemi hedef değer olan 55.0 seviyesine ulaşmıştır.",
+    "window_size": 600,
+    "observations_in_current_window": 0,
+    "threshold_update_applied": 1,
+    "threshold_update_direction": "increase",
+    "threshold_old": 0.4,
+    "threshold_new": 0.41,
+    "threshold_window_average_soil_moisture": 60.0,
+    "threshold_window_deviation_percent": 9.0909,
+    "sensor_quality_warning_active": 0,
+    "sensor_quality_warning_type": null,
+    "sensor_quality_message": null,
+    "consecutive_extreme_count": 0
   }
 }
