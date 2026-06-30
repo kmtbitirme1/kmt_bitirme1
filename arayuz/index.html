@@ -1087,9 +1087,6 @@
         <span id="espLabel">ESP32 —</span>
       </div>
       <div class="topbar-right">
-        <button class="ctrl-btn" id="btnExportLog" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2); margin-right: 12px;">
-          <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> Logları İndir (CSV)
-        </button>
         <div class="topbar-item">
           <i data-lucide="clock"></i>
           <span id="updateLabel">Son güncelleme: —</span>
@@ -1270,7 +1267,14 @@
 
     <!-- Threshold Chart -->
     <div class="chart-panel">
-      <div class="panel-title"><i data-lucide="bar-chart-2"></i> Eşik Değeri (Threshold) (Son 2000 Karar)</div>
+      <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div><i data-lucide="bar-chart-2"></i> Eşik Değeri (Threshold) (Son 2000 Karar)</div>
+        </div>
+        <button class="ctrl-btn" id="btnExportLog" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2);">
+          <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> Tüm Performans Loglarını İndir (CSV)
+        </button>
+      </div>
       <div class="chart-container" style="height: 180px;">
         <canvas id="thresholdChart"></canvas>
       </div>
