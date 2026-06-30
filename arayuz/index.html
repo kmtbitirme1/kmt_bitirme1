@@ -1087,6 +1087,9 @@
         <span id="espLabel">ESP32 —</span>
       </div>
       <div class="topbar-right">
+        <button class="ctrl-btn" id="btnExportLog" style="padding: 4px 8px; font-size: 0.75rem; min-height: unset; border: 1px solid var(--border); background: var(--bg-base); color: var(--text-2); margin-right: 12px;">
+          <i data-lucide="download" style="width: 14px; height: 14px; margin-right: 4px;"></i> Logları İndir (CSV)
+        </button>
         <div class="topbar-item">
           <i data-lucide="clock"></i>
           <span id="updateLabel">Son güncelleme: —</span>
@@ -1251,6 +1254,26 @@
         </div>
       </div>
       <div class="decision-reason" id="reasonBox">Algoritma kararı bekleniyor…</div>
+    </div>
+
+    <!-- Sensor Quality Panel -->
+    <div class="section-title" style="margin-top: 24px;"><i data-lucide="alert-triangle"></i> Sensör Kalite Durumu</div>
+    <div class="panel" id="sensorQualityPanel" style="margin-bottom: 24px; display: flex; align-items: center; gap: 16px;">
+      <div id="sqIcon" style="width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--green-dim); color: var(--green);">
+        <i data-lucide="check-circle"></i>
+      </div>
+      <div>
+        <div id="sqStatus" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; color: var(--text-1);">Sensörler Normal</div>
+        <div id="sqMessage" style="font-size: 0.8rem; color: var(--text-2);">Tüm sensör verileri beklenen sınırlar içerisinde.</div>
+      </div>
+    </div>
+
+    <!-- Threshold Chart -->
+    <div class="chart-panel">
+      <div class="panel-title"><i data-lucide="bar-chart-2"></i> Eşik Değer Değişimi (Son 2000 Karar)</div>
+      <div class="chart-container" style="height: 180px;">
+        <canvas id="thresholdChart"></canvas>
+      </div>
     </div>
 
     <!-- Controls + Timeline -->
@@ -1667,6 +1690,29 @@
         ? 'Algoritma servisine ulaşılamıyor — failsafe eşik kontrolü aktif.'
         : (d.decisionReason || 'Algoritma kararı bekleniyor…');
       box.className = 'decision-reason' + (label === 'ON' ? ' on' : ' off');
+
+      // Sensor Quality
+      const sqPanel = $('sensorQualityPanel');
+      const sqIcon = $('sqIcon');
+      const sqStatus = $('sqStatus');
+      const sqMessage = $('sqMessage');
+      
+      if (d.sensorQualityWarningActive) {
+        sqPanel.style.border = '1px solid rgba(239,68,68,0.3)';
+        sqIcon.style.background = 'var(--red-dim)';
+        sqIcon.style.color = 'var(--red)';
+        sqIcon.innerHTML = '<i data-lucide="alert-triangle"></i>';
+        sqStatus.textContent = 'Sensör Uyarısı: ' + (d.sensorQualityWarningType || 'Bilinmeyen');
+        sqMessage.textContent = (d.sensorQualityMessage || 'Sensör değerlerinde anormallik tespit edildi.') + ' (Art arda ' + (d.consecutiveExtremeCount || 0) + ' okuma)';
+      } else {
+        sqPanel.style.border = '1px solid var(--border)';
+        sqIcon.style.background = 'var(--green-dim)';
+        sqIcon.style.color = 'var(--green)';
+        sqIcon.innerHTML = '<i data-lucide="check-circle"></i>';
+        sqStatus.textContent = 'Sensörler Normal';
+        sqMessage.textContent = 'Tüm sensör verileri beklenen sınırlar içerisinde.';
+      }
+      lucide.createIcons();
     }
 
     // ── Decision Log ─────────────────────────────────────
@@ -1708,6 +1754,7 @@
     // ── Chart.js ─────────────────────────────────────────
     let mainChart = null;
     let longChart = null;
+    let threshChart = null;
 
     function createChart(canvasId) {
       const ctx = $(canvasId).getContext('2d');
@@ -1888,6 +1935,34 @@
 
       mainChart = createChart('mainChart');
       longChart = createChart('historyChart');
+
+      threshChart = new Chart($('thresholdChart').getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'Eşik Değeri',
+            data: [],
+            borderColor: '#A855F7',
+            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+            borderWidth: 2,
+            pointRadius: 2,
+            fill: true,
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+             x: { grid: { color: 'rgba(34,197,94,0.04)' }, ticks: { color: '#4A6B57' } },
+             y: { grid: { color: 'rgba(34,197,94,0.04)' }, ticks: { color: '#A855F7' } }
+          },
+          plugins: {
+            legend: { labels: { color: '#7A9B8A' } }
+          }
+        }
+      });
     }
 
     function drawChart(chartObj, history) {
@@ -1961,7 +2036,7 @@
     // gecilir; canli RAM verisi (son 60) yine de poll ile gelir.
     async function loadHistory() {
       try {
-        const r = await fetch(BACKEND + '/history?readings=3000&decisions=20', { cache: 'no-store' });
+        const r = await fetch(BACKEND + '/history?readings=3000&decisions=2000', { cache: 'no-store' });
         if (!r.ok) return;
         const h = await r.json();
         if (!h.dbReady) return;
@@ -2013,6 +2088,18 @@
           })).slice(0, 8);
           lastLoggedLabel = decisionLog[0]?.label ?? null;
           renderTimeline();
+          
+          // Threshold Chart
+          const threshData = h.decisions.slice().reverse().map(d => ({
+            t: new Date(d.ts),
+            val: d.decision_threshold_next || d.decision_threshold
+          })).filter(d => d.val != null);
+          
+          if(threshChart && threshData.length) {
+            threshChart.data.labels = threshData.map(d => clockStr(d.t));
+            threshChart.data.datasets[0].data = threshData.map(d => d.val);
+            threshChart.update('none');
+          }
         }
       } catch { /* DB yoksa/ulasilamazsa sessiz gec */ }
     }
@@ -2057,6 +2144,9 @@
 
     $('btnDownload15').addEventListener('click', () => downloadCSV(data15m, 'son_15_dk_veriler.csv'));
     $('btnDownload2h').addEventListener('click', () => downloadCSV(data2h, 'son_2_5_saat_veriler.csv'));
+    $('btnExportLog').addEventListener('click', () => {
+      window.open(BACKEND + '/api/export-csv', '_blank');
+    });
 
     // ── Init ─────────────────────────────────────────────
     lucide.createIcons();

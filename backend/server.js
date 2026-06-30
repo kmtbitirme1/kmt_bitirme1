@@ -295,6 +295,12 @@ app.post("/ingest", async (req, res) => {
       latest.moistureDeficit = decision.moisture_deficit;
       latest.decisionReason = decision.decision_reason;
 
+      const sq = decision.sensor_quality || {};
+      latest.sensorQualityWarningActive = sq.warning_active;
+      latest.sensorQualityWarningType = sq.warning_type;
+      latest.sensorQualityMessage = sq.message;
+      latest.consecutiveExtremeCount = sq.consecutive_extreme_count;
+
       // ESP32'ye gidecek otomatik komut (sure dahil).
       autoCommand = decision.irrigation_required
         ? { command: "on", durationSeconds: decision.pump_duration_seconds }
@@ -305,16 +311,40 @@ app.post("/ingest", async (req, res) => {
       // Kalici karar kaydi (DB yoksa no-op).
       const pressureKpa =
         typeof latest.pressure === "number" ? latest.pressure / 10 : DEFAULT_PRESSURE_KPA;
+      
+      const adapt = decision.adaptive_threshold || {};
+      const sq = decision.sensor_quality || {};
+      const op = decision.operational_inputs || {};
+      const lastUpdate = adapt.last_threshold_update || {};
+      
       insertDecision({
         soilMoisture, temperature, airHumidityPct: humidity, pressureKpa,
         onProbability: decision.on_probability,
-        decisionThreshold: decision.decision_threshold,
+        decisionThreshold: adapt.threshold_used_for_this_decision ?? decision.decision_threshold,
         irrigationRequired: decision.irrigation_required,
         decisionLabel: decision.decision_label,
         pumpDurationSeconds: decision.pump_duration_seconds,
         moistureDeficit: decision.moisture_deficit,
         targetSoilMoisture: decision.config?.target_soil_moisture,
         decisionReason: decision.decision_reason,
+        targetDeviation: lastUpdate.deviation,
+        absoluteTargetDeviation: lastUpdate.deviation != null ? Math.abs(lastUpdate.deviation) : null,
+        targetStatus: lastUpdate.direction === "increase" ? "above_target" : (lastUpdate.direction === "decrease" ? "below_target" : null),
+        decisionThresholdNext: adapt.current_threshold_for_next_decision,
+        windowSize: adapt.window_size,
+        observationsInCurrentWindow: adapt.observations_in_current_window,
+        thresholdUpdateApplied: adapt.threshold_update_applied_after_this_observation,
+        thresholdUpdateDirection: lastUpdate.direction,
+        thresholdOld: lastUpdate.old_threshold,
+        thresholdNew: lastUpdate.new_threshold,
+        thresholdWindowAverageSoilMoisture: lastUpdate.average_soil_moisture,
+        thresholdWindowDeviationPercent: lastUpdate.deviation_percent,
+        sensorQualityWarningActive: sq.warning_active,
+        sensorQualityWarningType: sq.warning_type,
+        sensorQualityMessage: sq.message,
+        consecutiveExtremeCount: sq.consecutive_extreme_count,
+        lastIrrigationMinutesAgo: op.last_irrigation_minutes_ago ?? minutesSinceLastIrrigation(),
+        lightLux: op.light_lux
       });
     } else {
       latest.algoOnline = false;
@@ -353,7 +383,7 @@ app.get("/history", async (req, res) => {
     return res.json({ dbReady: false, readings: [], decisions: [] });
   }
   const rLimit = Math.min(parseInt(req.query.readings) || 200, 3000);
-  const dLimit = Math.min(parseInt(req.query.decisions) || 50, 500);
+  const dLimit = Math.min(parseInt(req.query.decisions) || 50, 2000);
   const [readings, decisions] = await Promise.all([
     recentReadings(rLimit),
     recentDecisions(dLimit),
@@ -401,6 +431,70 @@ app.get("/command", (_req, res) => {
     autoCommand = null;
   }
   res.json({ command: cmd });
+});
+
+// ── Frontend -> backend: CSV Export (Son 2000) ─────────────────
+app.get("/api/export-csv", async (req, res) => {
+  if (!dbReady()) {
+    return res.status(503).send("Database not ready");
+  }
+  const decisions = await recentDecisions(2000);
+  
+  // CSV header
+  const fields = [
+    "timestamp", "measurement_id", "soil_moisture", "temperature", "air_humidity_pct", "pressure_kpa",
+    "light_lux", "last_irrigation_minutes_ago", "target_soil_moisture", "target_deviation",
+    "absolute_target_deviation", "target_status", "on_probability", "decision_threshold_used",
+    "decision_threshold_next", "irrigation_required", "decision_label", "pump_duration_seconds",
+    "moisture_deficit", "decision_reason", "window_size", "observations_in_current_window",
+    "threshold_update_applied", "threshold_update_direction", "threshold_old", "threshold_new",
+    "threshold_window_average_soil_moisture", "threshold_window_deviation_percent",
+    "sensor_quality_warning_active", "sensor_quality_warning_type", "sensor_quality_message", "consecutive_extreme_count"
+  ];
+  
+  let csv = fields.join(",") + "\\n";
+  
+  for (const d of decisions) {
+    const row = [
+      d.ts ? new Date(d.ts).toISOString() : "",
+      d.id ?? "",
+      d.soil_moisture ?? "",
+      d.temperature ?? "",
+      d.air_humidity_pct ?? "",
+      d.pressure_kpa ?? "",
+      d.light_lux ?? "",
+      d.last_irrigation_minutes_ago ?? "",
+      d.target_soil_moisture ?? "",
+      d.target_deviation ?? "",
+      d.absolute_target_deviation ?? "",
+      d.target_status ?? "",
+      d.on_probability ?? "",
+      d.decision_threshold ?? "", 
+      d.decision_threshold_next ?? "",
+      d.irrigation_required ? 1 : 0,
+      d.decision_label ?? "",
+      d.pump_duration_seconds ?? "",
+      d.moisture_deficit ?? "",
+      d.decision_reason ? \`"\${d.decision_reason.replace(/"/g, '""')}"\` : "",
+      d.window_size ?? "",
+      d.observations_in_current_window ?? "",
+      d.threshold_update_applied ? 1 : 0,
+      d.threshold_update_direction ?? "",
+      d.threshold_old ?? "",
+      d.threshold_new ?? "",
+      d.threshold_window_average_soil_moisture ?? "",
+      d.threshold_window_deviation_percent ?? "",
+      d.sensor_quality_warning_active ? 1 : 0,
+      d.sensor_quality_warning_type ?? "",
+      d.sensor_quality_message ? \`"\${d.sensor_quality_message.replace(/"/g, '""')}"\` : "",
+      d.consecutive_extreme_count ?? 0
+    ];
+    csv += row.join(",") + "\\n";
+  }
+  
+  res.header("Content-Type", "text/csv");
+  res.attachment("algorithm_log_performance.csv");
+  res.send(csv);
 });
 
 Promise.allSettled([ensureLogHeader(), initDb()]).finally(() => {

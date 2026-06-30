@@ -67,9 +67,53 @@ export async function initDb() {
         pump_duration_seconds DOUBLE PRECISION,
         moisture_deficit      DOUBLE PRECISION,
         target_soil_moisture  DOUBLE PRECISION,
-        decision_reason       TEXT
+        decision_reason       TEXT,
+        target_deviation      DOUBLE PRECISION,
+        absolute_target_deviation DOUBLE PRECISION,
+        target_status         TEXT,
+        decision_threshold_next DOUBLE PRECISION,
+        window_size           INTEGER,
+        observations_in_current_window INTEGER,
+        threshold_update_applied BOOLEAN,
+        threshold_update_direction TEXT,
+        threshold_old         DOUBLE PRECISION,
+        threshold_new         DOUBLE PRECISION,
+        threshold_window_average_soil_moisture DOUBLE PRECISION,
+        threshold_window_deviation_percent DOUBLE PRECISION,
+        sensor_quality_warning_active BOOLEAN,
+        sensor_quality_warning_type TEXT,
+        sensor_quality_message TEXT,
+        consecutive_extreme_count INTEGER,
+        last_irrigation_minutes_ago DOUBLE PRECISION,
+        light_lux             DOUBLE PRECISION
       );
     `);
+    
+    // Eksik kolonlari ekle (zaten varsa IF NOT EXISTS ile gecer)
+    const columnsToAdd = [
+      "target_deviation DOUBLE PRECISION",
+      "absolute_target_deviation DOUBLE PRECISION",
+      "target_status TEXT",
+      "decision_threshold_next DOUBLE PRECISION",
+      "window_size INTEGER",
+      "observations_in_current_window INTEGER",
+      "threshold_update_applied BOOLEAN",
+      "threshold_update_direction TEXT",
+      "threshold_old DOUBLE PRECISION",
+      "threshold_new DOUBLE PRECISION",
+      "threshold_window_average_soil_moisture DOUBLE PRECISION",
+      "threshold_window_deviation_percent DOUBLE PRECISION",
+      "sensor_quality_warning_active BOOLEAN",
+      "sensor_quality_warning_type TEXT",
+      "sensor_quality_message TEXT",
+      "consecutive_extreme_count INTEGER",
+      "last_irrigation_minutes_ago DOUBLE PRECISION",
+      "light_lux DOUBLE PRECISION"
+    ];
+    for (const col of columnsToAdd) {
+      await pool.query(`ALTER TABLE decisions ADD COLUMN IF NOT EXISTS ${col};`);
+    }
+
     // Zaman bazli sorgular icin indeks.
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings (ts);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_decisions_ts ON decisions (ts);`);
@@ -144,8 +188,15 @@ export async function insertDecision(d) {
       `INSERT INTO decisions
          (soil_moisture, temperature, air_humidity_pct, pressure_kpa,
           on_probability, decision_threshold, irrigation_required, decision_label,
-          pump_duration_seconds, moisture_deficit, target_soil_moisture, decision_reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          pump_duration_seconds, moisture_deficit, target_soil_moisture, decision_reason,
+          target_deviation, absolute_target_deviation, target_status, decision_threshold_next,
+          window_size, observations_in_current_window, threshold_update_applied,
+          threshold_update_direction, threshold_old, threshold_new,
+          threshold_window_average_soil_moisture, threshold_window_deviation_percent,
+          sensor_quality_warning_active, sensor_quality_warning_type,
+          sensor_quality_message, consecutive_extreme_count,
+          last_irrigation_minutes_ago, light_lux)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)`,
       [
         d.soilMoisture ?? null,
         d.temperature ?? null,
@@ -159,6 +210,24 @@ export async function insertDecision(d) {
         d.moistureDeficit ?? null,
         d.targetSoilMoisture ?? null,
         d.decisionReason ?? null,
+        d.targetDeviation ?? null,
+        d.absoluteTargetDeviation ?? null,
+        d.targetStatus ?? null,
+        d.decisionThresholdNext ?? null,
+        d.windowSize ?? null,
+        d.observationsInCurrentWindow ?? null,
+        d.thresholdUpdateApplied ?? null,
+        d.thresholdUpdateDirection ?? null,
+        d.thresholdOld ?? null,
+        d.thresholdNew ?? null,
+        d.thresholdWindowAverageSoilMoisture ?? null,
+        d.thresholdWindowDeviationPercent ?? null,
+        d.sensorQualityWarningActive ?? null,
+        d.sensorQualityWarningType ?? null,
+        d.sensorQualityMessage ?? null,
+        d.consecutiveExtremeCount ?? null,
+        d.lastIrrigationMinutesAgo ?? null,
+        d.lightLux ?? null,
       ]
     );
   } catch (e) {
@@ -183,12 +252,11 @@ export async function recentReadings(limit = 200) {
 }
 
 // ── Son N karari getir (zaman cizelgesi icin) ─────────────────
-export async function recentDecisions(limit = 50) {
+export async function recentDecisions(limit = 2000) {
   if (!ready) return [];
   try {
     const { rows } = await pool.query(
-      `SELECT ts, decision_label, on_probability, pump_duration_seconds, moisture_deficit, decision_reason
-         FROM decisions ORDER BY ts DESC LIMIT $1`,
+      `SELECT * FROM decisions ORDER BY ts DESC LIMIT $1`,
       [limit]
     );
     return rows;
