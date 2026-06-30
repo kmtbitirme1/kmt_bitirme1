@@ -1270,7 +1270,7 @@
 
     <!-- Threshold Chart -->
     <div class="chart-panel">
-      <div class="panel-title"><i data-lucide="bar-chart-2"></i> Eşik Değer Değişimi (Son 2000 Karar)</div>
+      <div class="panel-title"><i data-lucide="bar-chart-2"></i> Eşik Değeri (Threshold) (Son 2000 Karar)</div>
       <div class="chart-container" style="height: 180px;">
         <canvas id="thresholdChart"></canvas>
       </div>
@@ -1956,7 +1956,12 @@
           maintainAspectRatio: false,
           scales: {
              x: { grid: { color: 'rgba(34,197,94,0.04)' }, ticks: { color: '#4A6B57' } },
-             y: { grid: { color: 'rgba(34,197,94,0.04)' }, ticks: { color: '#A855F7' } }
+             y: { 
+               min: 0, 
+               max: 1, 
+               grid: { color: 'rgba(34,197,94,0.04)' }, 
+               ticks: { color: '#A855F7' } 
+             }
           },
           plugins: {
             legend: { labels: { color: '#7A9B8A' } }
