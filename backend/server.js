@@ -295,11 +295,11 @@ app.post("/ingest", async (req, res) => {
       latest.moistureDeficit = decision.moisture_deficit;
       latest.decisionReason = decision.decision_reason;
 
-      const sq = decision.sensor_quality || {};
-      latest.sensorQualityWarningActive = sq.warning_active;
-      latest.sensorQualityWarningType = sq.warning_type;
-      latest.sensorQualityMessage = sq.message;
-      latest.consecutiveExtremeCount = sq.consecutive_extreme_count;
+      const sensorQuality = decision.sensor_quality || {};
+      latest.sensorQualityWarningActive = sensorQuality.warning_active;
+      latest.sensorQualityWarningType = sensorQuality.warning_type;
+      latest.sensorQualityMessage = sensorQuality.message;
+      latest.consecutiveExtremeCount = sensorQuality.consecutive_extreme_count;
 
       // ESP32'ye gidecek otomatik komut (sure dahil).
       autoCommand = decision.irrigation_required
@@ -311,9 +311,8 @@ app.post("/ingest", async (req, res) => {
       // Kalici karar kaydi (DB yoksa no-op).
       const pressureKpa =
         typeof latest.pressure === "number" ? latest.pressure / 10 : DEFAULT_PRESSURE_KPA;
-      
+
       const adapt = decision.adaptive_threshold || {};
-      const sq = decision.sensor_quality || {};
       const op = decision.operational_inputs || {};
       const lastUpdate = adapt.last_threshold_update || {};
       
@@ -339,10 +338,10 @@ app.post("/ingest", async (req, res) => {
         thresholdNew: lastUpdate.new_threshold,
         thresholdWindowAverageSoilMoisture: lastUpdate.average_soil_moisture,
         thresholdWindowDeviationPercent: lastUpdate.deviation_percent,
-        sensorQualityWarningActive: sq.warning_active,
-        sensorQualityWarningType: sq.warning_type,
-        sensorQualityMessage: sq.message,
-        consecutiveExtremeCount: sq.consecutive_extreme_count,
+        sensorQualityWarningActive: sensorQuality.warning_active,
+        sensorQualityWarningType: sensorQuality.warning_type,
+        sensorQualityMessage: sensorQuality.message,
+        consecutiveExtremeCount: sensorQuality.consecutive_extreme_count,
         lastIrrigationMinutesAgo: op.last_irrigation_minutes_ago ?? minutesSinceLastIrrigation(),
         lightLux: op.light_lux
       });
@@ -439,6 +438,11 @@ app.get("/api/export-csv", async (req, res) => {
     return res.status(503).send("Database not ready");
   }
   const decisions = await recentDecisions(2000);
+  const csvCell = (value) => {
+    if (value == null) return "";
+    const text = String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
   
   // CSV header
   const fields = [
@@ -452,7 +456,7 @@ app.get("/api/export-csv", async (req, res) => {
     "sensor_quality_warning_active", "sensor_quality_warning_type", "sensor_quality_message", "consecutive_extreme_count"
   ];
   
-  let csv = fields.join(",") + "\\n";
+  let csv = fields.join(",") + "\n";
   
   for (const d of decisions) {
     const row = [
@@ -475,7 +479,7 @@ app.get("/api/export-csv", async (req, res) => {
       d.decision_label ?? "",
       d.pump_duration_seconds ?? "",
       d.moisture_deficit ?? "",
-      d.decision_reason ? \`"\${d.decision_reason.replace(/"/g, '""')}"\` : "",
+      d.decision_reason ?? "",
       d.window_size ?? "",
       d.observations_in_current_window ?? "",
       d.threshold_update_applied ? 1 : 0,
@@ -486,10 +490,10 @@ app.get("/api/export-csv", async (req, res) => {
       d.threshold_window_deviation_percent ?? "",
       d.sensor_quality_warning_active ? 1 : 0,
       d.sensor_quality_warning_type ?? "",
-      d.sensor_quality_message ? \`"\${d.sensor_quality_message.replace(/"/g, '""')}"\` : "",
+      d.sensor_quality_message ?? "",
       d.consecutive_extreme_count ?? 0
     ];
-    csv += row.join(",") + "\\n";
+    csv += row.map(csvCell).join(",") + "\n";
   }
   
   res.header("Content-Type", "text/csv");
