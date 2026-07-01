@@ -44,6 +44,8 @@ function normalizeAlgoUrl(raw) {
   return "https://" + v.replace(/\/+$/, "");
 }
 const ALGO_URL = normalizeAlgoUrl(process.env.ALGO_URL);
+const ALGO_REQUEST_TIMEOUT_MS = Number(process.env.ALGO_REQUEST_TIMEOUT_MS || 30000);
+const ALGO_KEEPALIVE_INTERVAL_MS = Number(process.env.ALGO_KEEPALIVE_INTERVAL_MS || 2 * 60 * 1000);
 
 // Karar/log dosyasi — evaluate_algorithm_performance.py bunu okur.
 const LOG_PATH = process.env.LOG_PATH || "./algorithm_log.csv";
@@ -122,6 +124,30 @@ function minutesSinceLastIrrigation() {
   return (Date.now() - lastIrrigationAt) / 60000;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = ALGO_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function warmAlgorithmService(reason = "periodic") {
+  try {
+    const r = await fetchWithTimeout(`${ALGO_URL}/health`, {}, ALGO_REQUEST_TIMEOUT_MS);
+    if (r.ok) {
+      latest.algoOnline = true;
+      return true;
+    }
+    console.warn(`[ALGO] keepalive ${reason}: HTTP ${r.status}`);
+  } catch (e) {
+    console.warn(`[ALGO] keepalive ${reason} basarisiz: ${e.message}`);
+  }
+  return false;
+}
+
 // ── Algoritma servisini cagir ─────────────────────────────────
 async function callAlgorithm(soilMoisture, humidity, temperature, pressureHpa) {
   // Basinc: BMP280 hPa gonderir (~1013). Algoritma kPa (80-120) bekler -> /10.
@@ -137,15 +163,21 @@ async function callAlgorithm(soilMoisture, humidity, temperature, pressureHpa) {
     config: { target_soil_moisture: appConfig.humThreshold }
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
-  try {
-    const r = await fetch(`${ALGO_URL}/predict`, {
+  const postPrediction = () =>
+    fetchWithTimeout(`${ALGO_URL}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(sensorData),
-      signal: controller.signal,
     });
+
+  try {
+    let r = await postPrediction();
+    if (!r.ok && [502, 503, 504].includes(r.status)) {
+      console.warn(`[ALGO] ${r.status}: servis soguk/uyaniyor olabilir; health ile uyandirip tekrar denenecek.`);
+      await warmAlgorithmService("retry");
+      r = await postPrediction();
+    }
+
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       console.warn(`[ALGO] ${r.status}: ${err.error || "bilinmeyen hata"}`);
@@ -155,8 +187,6 @@ async function callAlgorithm(soilMoisture, humidity, temperature, pressureHpa) {
   } catch (e) {
     console.warn(`[ALGO] servise ulasilamadi: ${e.message}`);
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -506,5 +536,7 @@ Promise.allSettled([ensureLogHeader(), initDb()]).finally(() => {
     console.log(`Akilli Tarim backend calisiyor — port ${PORT}`);
     console.log(`Algoritma servisi: ${ALGO_URL}`);
     console.log(`Kalici DB: ${dbReady() ? "AKTIF (Postgres)" : "KAPALI (RAM modu)"}`);
+    warmAlgorithmService("startup");
+    setInterval(() => warmAlgorithmService("periodic"), ALGO_KEEPALIVE_INTERVAL_MS);
   });
 });
